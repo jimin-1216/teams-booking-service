@@ -330,7 +330,7 @@ export class CardBuilder {
         },
         {
           type: 'TextBlock',
-          text: '본관(2-8층), 별관(3-4층) 회의실 예약이 가능합니다.',
+          text: '2층, 7층, 8층 회의실 예약이 가능합니다. (7층 입주사)',
           spacing: 'Medium',
           wrap: true,
         },
