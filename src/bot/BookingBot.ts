@@ -146,6 +146,7 @@ export class BookingBot extends TeamsActivityHandler {
       roomRepository.upsert({
         id: room.id,
         name: room.name,
+        building: room.building,
         floor: room.floor,
         capacity: room.capacity,
         externalId: room.externalId,
@@ -183,8 +184,11 @@ export class BookingBot extends TeamsActivityHandler {
 
     // 2. 센터 예약 사이트에서 실제 예약 실행
     const room = roomRepository.findById(roomId);
+    const roomBuilding = data.roomBuilding || room?.building || '';
     const result = await bookingExecutor.executeBooking({
-      roomExternalId: room?.externalId || roomId,
+      roomName: roomName || room?.name || '',
+      roomBuilding,
+      roomFloor: parseInt(roomFloor, 10) || room?.floor || 0,
       date,
       startTime,
       endTime,
@@ -246,7 +250,13 @@ export class BookingBot extends TeamsActivityHandler {
 
     // 외부 사이트에서 취소 실행
     if (booking.externalBookingId) {
-      const result = await bookingExecutor.cancelBooking(booking.externalBookingId);
+      const room = roomRepository.findById(booking.roomId);
+      const result = await bookingExecutor.cancelBooking(
+        booking.externalBookingId,
+        room?.name || '',
+        booking.date,
+        booking.startTime,
+      );
       if (!result.success) {
         await context.sendActivity({
           attachments: [

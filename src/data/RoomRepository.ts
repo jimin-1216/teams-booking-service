@@ -6,6 +6,7 @@ const logger = createLogger('RoomRepository');
 export interface Room {
   id: string;
   name: string;
+  building: string;
   floor: number;
   capacity: number | null;
   externalId: string;
@@ -17,52 +18,54 @@ export class RoomRepository {
   findAll(): Room[] {
     const db = getDatabase();
     return db
-      .prepare('SELECT id, name, floor, capacity, external_id as externalId, created_at as createdAt, updated_at as updatedAt FROM rooms ORDER BY floor, name')
+      .prepare('SELECT id, name, COALESCE(building, "") as building, floor, capacity, external_id as externalId, created_at as createdAt, updated_at as updatedAt FROM rooms ORDER BY floor, name')
       .all() as Room[];
   }
 
   findByFloor(floor: number): Room[] {
     const db = getDatabase();
     return db
-      .prepare('SELECT id, name, floor, capacity, external_id as externalId, created_at as createdAt, updated_at as updatedAt FROM rooms WHERE floor = ? ORDER BY name')
+      .prepare('SELECT id, name, COALESCE(building, "") as building, floor, capacity, external_id as externalId, created_at as createdAt, updated_at as updatedAt FROM rooms WHERE floor = ? ORDER BY name')
       .all(floor) as Room[];
   }
 
   findById(id: string): Room | undefined {
     const db = getDatabase();
     return db
-      .prepare('SELECT id, name, floor, capacity, external_id as externalId, created_at as createdAt, updated_at as updatedAt FROM rooms WHERE id = ?')
+      .prepare('SELECT id, name, COALESCE(building, "") as building, floor, capacity, external_id as externalId, created_at as createdAt, updated_at as updatedAt FROM rooms WHERE id = ?')
       .get(id) as Room | undefined;
   }
 
   findByExternalId(externalId: string): Room | undefined {
     const db = getDatabase();
     return db
-      .prepare('SELECT id, name, floor, capacity, external_id as externalId, created_at as createdAt, updated_at as updatedAt FROM rooms WHERE external_id = ?')
+      .prepare('SELECT id, name, COALESCE(building, "") as building, floor, capacity, external_id as externalId, created_at as createdAt, updated_at as updatedAt FROM rooms WHERE external_id = ?')
       .get(externalId) as Room | undefined;
   }
 
   upsert(room: Omit<Room, 'createdAt' | 'updatedAt'>): void {
     const db = getDatabase();
     db.prepare(`
-      INSERT INTO rooms (id, name, floor, capacity, external_id)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO rooms (id, name, building, floor, capacity, external_id)
+      VALUES (?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         name = excluded.name,
+        building = excluded.building,
         floor = excluded.floor,
         capacity = excluded.capacity,
         external_id = excluded.external_id,
         updated_at = CURRENT_TIMESTAMP
-    `).run(room.id, room.name, room.floor, room.capacity, room.externalId);
+    `).run(room.id, room.name, room.building || '', room.floor, room.capacity, room.externalId);
   }
 
   bulkUpsert(rooms: Omit<Room, 'createdAt' | 'updatedAt'>[]): void {
     const db = getDatabase();
     const upsertStmt = db.prepare(`
-      INSERT INTO rooms (id, name, floor, capacity, external_id)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO rooms (id, name, building, floor, capacity, external_id)
+      VALUES (?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         name = excluded.name,
+        building = excluded.building,
         floor = excluded.floor,
         capacity = excluded.capacity,
         external_id = excluded.external_id,

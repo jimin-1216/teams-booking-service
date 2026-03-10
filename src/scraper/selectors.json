@@ -2,37 +2,73 @@
   "_comment": "센터 예약 사이트(https://app.mile.im) CSS 셀렉터 설정. 사이트 변경 시 이 파일만 수정하면 됩니다.",
   "_updated": "2026-03-10",
   "login": {
-    "usernameInput": "input[name='username'], input[type='email'], #username",
-    "passwordInput": "input[name='password'], input[type='password'], #password",
-    "submitButton": "button[type='submit'], .login-btn, #login-button",
-    "loginSuccessIndicator": ".dashboard, .main-content, [class*='home']"
+    "usernameInput": "input[placeholder='이메일 주소']",
+    "passwordInput": "input[type='password'][placeholder='비밀번호']",
+    "submitButton": "button.button-solid-primary",
+    "submitButtonDisabled": "button.button-solid-primary.button-solid-disabled",
+    "loginSuccessUrl": "/workspace/list"
   },
-  "booking": {
-    "dateSelector": "input[type='date'], .date-picker, [class*='date']",
-    "timeStartSelector": "select[name='startTime'], .time-start, [class*='start-time']",
-    "timeEndSelector": "select[name='endTime'], .time-end, [class*='end-time']",
-    "floorSelector": "select[name='floor'], .floor-select, [class*='floor']",
-    "roomListContainer": ".room-list, .booking-list, [class*='room']",
-    "roomItem": ".room-item, .room-card, [class*='room-item']",
-    "roomName": ".room-name, .room-title, h3, h4",
-    "roomCapacity": ".room-capacity, [class*='capacity']",
-    "roomAvailable": ".available, [class*='available'], :not(.booked)",
-    "bookButton": ".book-btn, button[class*='book'], button[class*='reserve']",
-    "memoInput": "textarea[name='memo'], input[name='memo'], .memo-input, [class*='memo']",
-    "confirmButton": ".confirm-btn, button[type='submit'], [class*='confirm']",
-    "cancelButton": ".cancel-btn, button[class*='cancel'], [class*='cancel']"
+  "workspaceSelection": {
+    "workspaceItem": "서울창업허브",
+    "_note": "Find element containing this text and click it"
+  },
+  "bookingPage": {
+    "url": "/meeting/예약 현황",
+    "dateDisplay": "button.button-text.secondary.enabled.medium",
+    "todayButton": "button:has-text('오늘')",
+    "prevDateButton": "button.rdrPprevButton, button[class*='prev']",
+    "nextDateButton": "button.rdrNextButton, button[class*='next']",
+    "newBookingButton": "button.button-solid-primary:has-text('예약하기')",
+    "buildingFilter": "input[placeholder='회의실 위치']",
+    "buildingFilterClass": ".css-2ozt5a[placeholder='회의실 위치']",
+    "roomNameFilter": "input[placeholder='회의실 이름']",
+    "roomNameFilterClass": ".css-2ozt5a[placeholder='회의실 이름']",
+    "roomColumnHeader": "[class*='room'] [class*='header'], [class*='column'] [class*='header']",
+    "roomDetailLink": "a:has-text('상세 정보')",
+    "calendarDayButton": "button.rdrDay",
+    "calendarPrevButton": "button.rdrPprevButton",
+    "calendarNextButton": "button.rdrNextButton"
+  },
+  "bookingForm": {
+    "_note": "Slide-out panel on the right side",
+    "titleInput": "input[placeholder='회의실 예약']",
+    "dateInput": "input.input[value*='2026']",
+    "startTimeInput": "input.input:nth-of-type(2)",
+    "endTimeInput": "input.input:nth-of-type(3)",
+    "roomSearchInput": "input[placeholder='회의실 선택 (건물명, 회의실명 검색)']",
+    "attendeeSearchInput": "input[placeholder='참석자 추가 (이름, 이메일 검색)']",
+    "memoTextarea": "textarea[placeholder='예약 메모']",
+    "submitButton": "button:has-text('예약하기')",
+    "submitButtonDisabled": "button.button-solid-disabled:has-text('예약하기')",
+    "repeatButton": "button:has-text('반복')",
+    "closeButton": "button[aria-label='닫기'], button:has-text('✕'), [class*='close']"
   },
   "myBookings": {
-    "listContainer": ".my-bookings, .booking-history, [class*='my-booking']",
-    "bookingItem": ".booking-item, [class*='booking-item']",
-    "bookingDate": ".booking-date, [class*='date']",
-    "bookingTime": ".booking-time, [class*='time']",
-    "bookingRoom": ".booking-room, [class*='room']",
-    "bookingStatus": ".booking-status, [class*='status']",
-    "cancelButton": ".cancel-btn, button[class*='cancel']"
+    "_note": "Sidebar: 나의 예약/참석",
+    "navLink": "a:has-text('나의 예약/참석'), [class='css-1oxykrh']",
+    "bookingRoomLabel": "나의 예약/참석",
+    "editButton": "button:has-text('수정하기')",
+    "deleteButton": "button:has-text('삭제하기')",
+    "fields": {
+      "room": "회의실",
+      "time": "예약 시간",
+      "repeat": "반복 조건",
+      "organizer": "예약자",
+      "attendees": "참석자",
+      "memo": "예약 메모"
+    }
   },
   "navigation": {
-    "bookingPage": "a[href*='booking'], a[href*='reserve'], [class*='booking-nav']",
-    "myBookingsPage": "a[href*='my-booking'], a[href*='history'], [class*='my-booking-nav']"
+    "sectionHeader": "공통",
+    "bookingStatus": "a:has-text('예약 현황'), [class='css-oxuynv']",
+    "bookingStatusActive": ".css-oxuynv",
+    "myBookings": "a:has-text('나의 예약/참석'), .css-1oxykrh",
+    "notificationSettings": "a:has-text('나의 알림 설정')",
+    "bookingRestriction": "a:has-text('회의실 예약 제한 요청')"
+  },
+  "roomListFilter": {
+    "buildingOptions": ["전체 건물", "별관", "본관"],
+    "buildingSearch": "input[placeholder='건물명 검색']",
+    "roomSearch": "input[placeholder='회의실명 검색']"
   }
 }

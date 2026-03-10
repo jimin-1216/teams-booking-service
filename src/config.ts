@@ -10,6 +10,7 @@ export const config = {
     password: process.env.MILE_PASSWORD || '',
     loginUrl: 'https://app.mile.im/login',
     baseUrl: 'https://app.mile.im',
+    workspaceName: process.env.MILE_WORKSPACE || '서울창업허브',
   },
 
   // Azure Bot Service

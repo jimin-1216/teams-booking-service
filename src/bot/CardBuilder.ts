@@ -73,6 +73,7 @@ export class CardBuilder {
 
       for (const room of floorRooms) {
         const capacityText = room.capacity ? ` (${room.capacity}인)` : '';
+        const buildingText = room.building ? `${room.building} ` : '';
 
         body.push({
           type: 'ColumnSet',
@@ -83,7 +84,7 @@ export class CardBuilder {
               items: [
                 {
                   type: 'TextBlock',
-                  text: `${room.name}${capacityText}`,
+                  text: `${buildingText}${room.name}${capacityText}`,
                 },
               ],
               verticalContentAlignment: 'Center',
@@ -103,6 +104,7 @@ export class CardBuilder {
                         action: 'bookRoom',
                         roomId: room.id,
                         roomName: room.name,
+                        roomBuilding: room.building,
                         roomFloor: room.floor,
                         date,
                         startTime,
@@ -328,7 +330,7 @@ export class CardBuilder {
         },
         {
           type: 'TextBlock',
-          text: '2층, 7층, 8층 회의실 예약이 가능합니다.',
+          text: '본관(2-8층), 별관(3-4층) 회의실 예약이 가능합니다.',
           spacing: 'Medium',
           wrap: true,
         },

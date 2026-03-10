@@ -24,6 +24,7 @@ export function initializeDatabase(): void {
     CREATE TABLE IF NOT EXISTS rooms (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
+      building TEXT NOT NULL DEFAULT '',
       floor INTEGER NOT NULL,
       capacity INTEGER,
       external_id TEXT NOT NULL,
