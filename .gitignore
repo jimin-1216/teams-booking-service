@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.env
+*.db
+logs/
+logs/screenshots/
+*.tsbuildinfo
+.DS_Store
+Thumbs.db

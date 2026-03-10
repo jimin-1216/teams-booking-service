@@ -1,0 +1,38 @@
+{
+  "_comment": "센터 예약 사이트(https://app.mile.im) CSS 셀렉터 설정. 사이트 변경 시 이 파일만 수정하면 됩니다.",
+  "_updated": "2026-03-10",
+  "login": {
+    "usernameInput": "input[name='username'], input[type='email'], #username",
+    "passwordInput": "input[name='password'], input[type='password'], #password",
+    "submitButton": "button[type='submit'], .login-btn, #login-button",
+    "loginSuccessIndicator": ".dashboard, .main-content, [class*='home']"
+  },
+  "booking": {
+    "dateSelector": "input[type='date'], .date-picker, [class*='date']",
+    "timeStartSelector": "select[name='startTime'], .time-start, [class*='start-time']",
+    "timeEndSelector": "select[name='endTime'], .time-end, [class*='end-time']",
+    "floorSelector": "select[name='floor'], .floor-select, [class*='floor']",
+    "roomListContainer": ".room-list, .booking-list, [class*='room']",
+    "roomItem": ".room-item, .room-card, [class*='room-item']",
+    "roomName": ".room-name, .room-title, h3, h4",
+    "roomCapacity": ".room-capacity, [class*='capacity']",
+    "roomAvailable": ".available, [class*='available'], :not(.booked)",
+    "bookButton": ".book-btn, button[class*='book'], button[class*='reserve']",
+    "memoInput": "textarea[name='memo'], input[name='memo'], .memo-input, [class*='memo']",
+    "confirmButton": ".confirm-btn, button[type='submit'], [class*='confirm']",
+    "cancelButton": ".cancel-btn, button[class*='cancel'], [class*='cancel']"
+  },
+  "myBookings": {
+    "listContainer": ".my-bookings, .booking-history, [class*='my-booking']",
+    "bookingItem": ".booking-item, [class*='booking-item']",
+    "bookingDate": ".booking-date, [class*='date']",
+    "bookingTime": ".booking-time, [class*='time']",
+    "bookingRoom": ".booking-room, [class*='room']",
+    "bookingStatus": ".booking-status, [class*='status']",
+    "cancelButton": ".cancel-btn, button[class*='cancel']"
+  },
+  "navigation": {
+    "bookingPage": "a[href*='booking'], a[href*='reserve'], [class*='booking-nav']",
+    "myBookingsPage": "a[href*='my-booking'], a[href*='history'], [class*='my-booking-nav']"
+  }
+}
