@@ -1,6 +1,4 @@
 import { Page } from 'playwright';
-import fs from 'fs';
-import path from 'path';
 import { createLogger } from '../utils/logger';
 import { browserPool } from './BrowserPool';
 import { siteAuth } from './SiteAuthenticator';
@@ -8,9 +6,9 @@ import { enqueueScraperTask } from '../utils/queue';
 
 const logger = createLogger('RoomScraper');
 
-const selectors = JSON.parse(
-  fs.readFileSync(path.resolve(__dirname, 'selectors.json'), 'utf-8'),
-);
+/** 예약 가능 층 (본관만) */
+const BOOKABLE_FLOORS = [2, 7, 8];
+const BUILDING = '본관';
 
 export interface RoomInfo {
   id: string;
@@ -18,7 +16,7 @@ export interface RoomInfo {
   building: string;
   floor: number;
   capacity: number | null;
-  externalId: string; // "소회의실①_별관_3층" 형식
+  externalId: string; // "회의실 ①_본관_7층"
   available: boolean;
 }
 
@@ -27,20 +25,18 @@ export interface SearchParams {
   startTime: string; // HH:mm
   endTime: string; // HH:mm
   floor?: number;
-  building?: string; // 별관, 본관
+  building?: string;
 }
 
 /**
- * 마일 사이트의 예약 현황 페이지에서 회의실 정보/가용성을 스크래핑
+ * 마일 사이트 예약 현황 페이지에서 회의실 조회
  *
- * 사이트 구조:
- * - 가로 스크롤 가능한 타임그리드 (세로: 시간, 가로: 회의실)
- * - 각 회의실 컬럼 헤더: 이름 + 건물-층 + "상세 정보"
- * - 예약은 컬러 블록으로 표시 (회사명 + 시간)
+ * 전략: 건물 필터(본관) + 층 필터(2/7/8) → 타임그리드 파싱 + 가로 스크롤
+ * 예약 블록의 시간 텍스트로 가용성 판단
  */
 export class RoomScraper {
   /**
-   * 특정 날짜의 회의실 목록과 가용성 조회
+   * 특정 날짜/시간대의 빈 회의실 조회
    */
   async searchAvailableRooms(params: SearchParams): Promise<RoomInfo[]> {
     return enqueueScraperTask(async () => {
@@ -49,30 +45,30 @@ export class RoomScraper {
 
       try {
         await siteAuth.navigateToBookingPage(page);
-
-        // 날짜 설정
         await this.setDate(page, params.date);
 
-        // 전체 회의실 목록 + 예약 현황 파싱
-        const rooms = await this.parseRoomGrid(page, params);
+        const floors = params.floor ? [params.floor] : BOOKABLE_FLOORS;
+        const allRooms: RoomInfo[] = [];
 
-        // 필터 적용
-        let filtered = rooms;
-        if (params.floor) {
-          filtered = filtered.filter((r) => r.floor === params.floor);
+        for (const floor of floors) {
+          await this.applyFilter(page, BUILDING, floor);
+          const rooms = await this.scrollAndCollectRooms(page, params, floor);
+          allRooms.push(...rooms);
         }
-        if (params.building) {
-          filtered = filtered.filter((r) => r.building === params.building);
-        }
+
+        // 필터 리셋 (다른곳 클릭)
+        await page.click('body', { position: { x: 100, y: 500 } });
+
+        const available = allRooms.filter((r) => r.available);
 
         logger.info('회의실 조회 완료', {
           duration_ms: Date.now() - start,
-          total: rooms.length,
-          available: filtered.filter((r) => r.available).length,
-          floor: params.floor || 'all',
+          total: allRooms.length,
+          available: available.length,
+          floors,
         });
 
-        return filtered.filter((r) => r.available);
+        return available;
       } catch (error) {
         await siteAuth.captureScreenshot(page, 'search-failure');
         logger.error('회의실 조회 실패', {
@@ -87,7 +83,7 @@ export class RoomScraper {
   }
 
   /**
-   * 전체 회의실 목록 조회 (가용성 무관)
+   * 전체 예약 가능 회의실 목록 (가용성 무관)
    */
   async getAllRooms(): Promise<RoomInfo[]> {
     return enqueueScraperTask(async () => {
@@ -96,63 +92,18 @@ export class RoomScraper {
       try {
         await siteAuth.navigateToBookingPage(page);
 
-        // 예약하기 버튼 클릭하여 회의실 선택 패널에서 전체 목록 추출
-        const bookBtn = await page.$('button.button-solid-primary:has-text("예약하기")');
-        if (!bookBtn) throw new Error('예약하기 버튼을 찾을 수 없습니다.');
-        await bookBtn.click();
-        await page.waitForTimeout(1500);
+        const allRooms: RoomInfo[] = [];
 
-        // 회의실 선택 입력란 클릭하여 드롭다운 열기
-        const roomSearch = await page.$(selectors.bookingForm.roomSearchInput);
-        if (roomSearch) {
-          await roomSearch.click();
-          await page.waitForTimeout(1000);
+        for (const floor of BOOKABLE_FLOORS) {
+          await this.applyFilter(page, BUILDING, floor);
+          const rooms = await this.scrollAndCollectRooms(page, null, floor);
+          allRooms.push(...rooms);
         }
 
-        // 회의실 목록 파싱 (드롭다운에서)
-        const rooms = await page.evaluate(() => {
-          const results: Array<{
-            name: string;
-            building: string;
-            floor: number;
-            capacity: number | null;
-          }> = [];
+        await page.click('body', { position: { x: 100, y: 500 } });
 
-          // 회의실 선택 드롭다운의 항목들 파싱
-          // 라벨 형식: "건물 - N층 | M인"
-          const doc = (globalThis as any).document;
-          const items = doc.querySelectorAll('[class*="option"], [class*="item"], [class*="list"] > div');
-          items.forEach((el: any) => {
-            const text = el.textContent?.trim() || '';
-            const match = text.match(/(별관|본관)\s*-\s*(\d+)층\s*\|\s*(\d+)인/);
-            if (match) {
-              const nameEl = el.querySelector('p, span, div');
-              const name = nameEl?.textContent?.trim() || text;
-              results.push({
-                name,
-                building: match[1],
-                floor: parseInt(match[2], 10),
-                capacity: parseInt(match[3], 10),
-              });
-            }
-          });
-
-          return results;
-        });
-
-        // 폼 닫기
-        const closeBtn = await page.$('button:has-text("✕"), [class*="close"]');
-        if (closeBtn) await closeBtn.click();
-
-        return rooms.map((r, i) => ({
-          id: `room_${i}`,
-          name: r.name,
-          building: r.building,
-          floor: r.floor,
-          capacity: r.capacity,
-          externalId: `${r.name}_${r.building}_${r.floor}층`,
-          available: true,
-        }));
+        logger.info('전체 회의실 목록 조회', { count: allRooms.length });
+        return allRooms;
       } catch (error) {
         logger.error('전체 회의실 목록 조회 실패', { error: (error as Error).message });
         throw error;
@@ -163,50 +114,115 @@ export class RoomScraper {
   }
 
   /**
-   * 캘린더에서 날짜 선택
+   * 건물 + 층 필터 적용
+   * 회의실 위치 클릭 → 건물 선택 → 층 선택
    */
-  private async setDate(page: Page, dateStr: string): Promise<void> {
-    const [year, month, day] = dateStr.split('-').map(Number);
+  private async applyFilter(page: Page, building: string, floor: number): Promise<void> {
+    // 회의실 위치 필터 클릭
+    const locationFilter = await page.$("input[placeholder='회의실 위치']");
+    if (!locationFilter) throw new Error('회의실 위치 필터를 찾을 수 없습니다.');
 
-    // 날짜 표시 버튼 클릭하여 캘린더 열기
-    const dateBtn = await page.$('button:has-text(".")');
-    if (!dateBtn) return;
+    await locationFilter.click();
+    await page.waitForTimeout(800);
 
-    // 현재 표시 날짜 읽기
-    const currentDateText = await dateBtn.textContent();
-    if (!currentDateText) return;
-
-    // 이미 올바른 날짜면 스킵
-    const dateFormatted = `${year}. ${String(month).padStart(2, '0')}. ${String(day).padStart(2, '0')}`;
-    if (currentDateText.includes(dateFormatted)) return;
-
-    // 날짜를 rdrDay 캘린더 버튼으로 선택
-    // 먼저 올바른 달로 이동해야 함
-    await dateBtn.click();
+    // 건물 선택 (드롭다운 왼쪽: css-y4bpjy 클래스)
+    await page.locator(`div.css-y4bpjy:has-text("${building}")`).click();
     await page.waitForTimeout(500);
 
-    // 해당 날짜의 rdrDay 버튼 클릭 (rdrDayToday가 아닌 특정 날짜)
-    const dayButton = await page.$(
-      `button.rdrDay:not(.rdrDayPassive):not(.rdrDayDisabled) >> text="${day}"`,
-    );
-    if (dayButton) {
-      await dayButton.click();
-      await page.waitForTimeout(500);
-    }
+    // 층 선택 (드롭다운 오른쪽)
+    await page.locator(`text=${floor}층`).first().click();
+    await page.waitForTimeout(1500);
   }
 
   /**
-   * 예약 현황 타임그리드에서 회의실 목록 + 가용성 파싱
+   * 타임그리드에서 가로 스크롤하며 회의실 + 예약 현황 수집
    */
-  private async parseRoomGrid(page: Page, params: SearchParams): Promise<RoomInfo[]> {
-    const rooms: RoomInfo[] = [];
-    const seenRooms = new Set<string>();
+  private async scrollAndCollectRooms(
+    page: Page,
+    params: SearchParams | null,
+    targetFloor: number,
+  ): Promise<RoomInfo[]> {
+    // 스크롤 초기화
+    await page.evaluate(() => {
+      const doc = (globalThis as any).document;
+      for (const div of Array.from(doc.querySelectorAll('div')) as any[]) {
+        if (div.scrollWidth > div.clientWidth + 50
+          && div.getBoundingClientRect().y > 150
+          && div.getBoundingClientRect().height > 200) {
+          div.scrollLeft = 0;
+          break;
+        }
+      }
+    });
+    await page.waitForTimeout(500);
 
-    // "상세 정보" 링크 기반으로 회의실 헤더 파싱
-    const headers = await page.evaluate(() => {
-      /* eslint-disable @typescript-eslint/no-explicit-any */
+    const allRooms = new Map<string, RoomInfo>();
+    let attempts = 0;
+
+    while (attempts < 30) {
+      // 현재 보이는 회의실 헤더 파싱
+      const headers = await this.parseVisibleHeaders(page);
+
+      for (const h of headers) {
+        const { building, floor } = this.parseLocation(h.location);
+        // 타겟 층만 수집 (필터 적용 후에도 다른 층 데이터가 섞일 수 있음)
+        if (floor !== targetFloor) continue;
+
+        const key = `${h.name}_${building}_${floor}`;
+        if (allRooms.has(key)) continue;
+
+        let available = true;
+        if (params) {
+          available = await this.checkColumnAvailability(
+            page, h.colIndex, params.startTime, params.endTime,
+          );
+        }
+
+        allRooms.set(key, {
+          id: `room_${building}_${floor}_${h.name}`.replace(/\s/g, ''),
+          name: h.name,
+          building,
+          floor,
+          capacity: null,
+          externalId: `${h.name}_${building}_${floor}층`,
+          available,
+        });
+      }
+
+      // 가로 스크롤
+      const canScroll = await page.evaluate(() => {
+        const doc = (globalThis as any).document;
+        for (const div of Array.from(doc.querySelectorAll('div')) as any[]) {
+          if (div.scrollWidth > div.clientWidth + 50
+            && div.getBoundingClientRect().y > 150
+            && div.getBoundingClientRect().height > 200) {
+            const before = div.scrollLeft;
+            div.scrollLeft += 400;
+            return div.scrollLeft > before;
+          }
+        }
+        return false;
+      });
+
+      if (!canScroll) break;
+      await page.waitForTimeout(300);
+      attempts++;
+    }
+
+    return Array.from(allRooms.values());
+  }
+
+  /**
+   * 현재 화면에 보이는 회의실 헤더 파싱
+   * "상세 정보" 링크 기반
+   */
+  private async parseVisibleHeaders(
+    page: Page,
+  ): Promise<Array<{ name: string; location: string; colIndex: number }>> {
+    return page.evaluate(() => {
       const results: Array<{ name: string; location: string; colIndex: number }> = [];
-      const allEls = Array.from((globalThis as any).document.querySelectorAll('*')) as any[];
+      const doc = (globalThis as any).document;
+      const allEls = Array.from(doc.querySelectorAll('*')) as any[];
       const detailEls = allEls.filter(
         (el: any) => el.textContent?.trim() === '상세 정보' && el.children.length === 0,
       );
@@ -214,46 +230,21 @@ export class RoomScraper {
       detailEls.forEach((el: any, idx: number) => {
         const parent = el.closest?.('div')?.parentElement;
         if (!parent) return;
-        const texts = parent.innerText.split('\n').map((t: string) => t.trim()).filter(Boolean);
+        const texts = parent.innerText
+          .split('\n')
+          .map((t: string) => t.trim())
+          .filter(Boolean);
         if (texts.length >= 2) {
           results.push({
             name: texts[0],
-            location: texts.find((t: string) => t.includes('층') && t.includes('-')) || texts[1],
+            location:
+              texts.find((t: string) => t.includes('층') && t.includes('-')) || texts[1],
             colIndex: idx,
           });
         }
       });
       return results;
     });
-
-    // 중복 제거 (같은 방이 두 번 나옴 — DOM 구조상)
-    for (const header of headers) {
-      const key = `${header.name}_${header.location}`;
-      if (seenRooms.has(key)) continue;
-      seenRooms.add(key);
-
-      const { building, floor } = this.parseLocation(header.location);
-
-      // 가용성 체크: 해당 시간대에 예약 블록이 있는지 확인
-      const available = await this.checkAvailability(
-        page,
-        header.colIndex,
-        params.startTime,
-        params.endTime,
-      );
-
-      rooms.push({
-        id: `room_${rooms.length}`,
-        name: header.name,
-        building,
-        floor,
-        capacity: null, // 타임그리드에서는 수용인원 안보임
-        externalId: `${header.name}_${building}_${floor}층`,
-        available,
-      });
-    }
-
-    return rooms;
   }
 
   /**
@@ -268,18 +259,111 @@ export class RoomScraper {
   }
 
   /**
-   * 특정 회의실 컬럼의 시간대에 예약이 없는지 확인
-   * (간단한 휴리스틱: 해당 컬럼의 예약 블록 시간을 비교)
+   * 캘린더에서 날짜 선택
+   * 예약 현황 페이지 상단의 날짜 버튼 → rdrDay 캘린더
    */
-  private async checkAvailability(
-    _page: Page,
-    _colIndex: number,
-    _startTime: string,
-    _endTime: string,
+  private async setDate(page: Page, dateStr: string): Promise<void> {
+    const [year, month, day] = dateStr.split('-').map(Number);
+
+    // 현재 표시된 날짜와 비교
+    const dateDisplay = await page.$('button:has-text(".")');
+    if (!dateDisplay) return;
+
+    const currentText = await dateDisplay.textContent();
+    if (!currentText) return;
+
+    const dateFormatted = `${year}. ${String(month).padStart(2, '0')}. ${String(day).padStart(2, '0')}`;
+    if (currentText.includes(dateFormatted)) return;
+
+    // 날짜 변경: < > 버튼 또는 캘린더 직접 선택
+    await dateDisplay.click();
+    await page.waitForTimeout(500);
+
+    const dayButton = await page.$(
+      `button.rdrDay:not(.rdrDayPassive):not(.rdrDayDisabled) >> text="${day}"`,
+    );
+    if (dayButton) {
+      await dayButton.click();
+      await page.waitForTimeout(500);
+    }
+  }
+
+  /**
+   * 특정 회의실 컬럼의 예약 블록을 확인하여 시간대 가용성 판단
+   *
+   * 예약 블록 텍스트 형식: "HH:mm ~HH:mm" (예: "15:00 ~17:30")
+   * 해당 컬럼 영역의 예약 블록 시간과 요청 시간이 겹치면 unavailable
+   */
+  private async checkColumnAvailability(
+    page: Page,
+    colIndex: number,
+    startTime: string,
+    endTime: string,
   ): Promise<boolean> {
-    // TODO: 타임그리드에서 해당 컬럼의 예약 블록 시간과 요청 시간을 비교
-    // 현재는 true 반환 (예약 시도 시 사이트에서 충돌 체크)
+    const bookingTimes = await page.evaluate(
+      ({ colIdx }) => {
+        const doc = (globalThis as any).document;
+        const allEls = Array.from(doc.querySelectorAll('*')) as any[];
+        const detailEls = allEls.filter(
+          (el: any) => el.textContent?.trim() === '상세 정보' && el.children.length === 0,
+        );
+
+        const targetDetail = detailEls[colIdx];
+        if (!targetDetail) return [];
+
+        // 이 컬럼의 헤더 위치 기반으로 해당 컬럼 영역 계산
+        const headerParent = targetDetail.closest?.('div')?.parentElement;
+        if (!headerParent) return [];
+
+        const headerRect = headerParent.getBoundingClientRect();
+        const colLeft = headerRect.left;
+        const colRight = headerRect.right;
+
+        // 해당 컬럼 영역의 예약 블록에서 시간 텍스트 추출
+        const timeTexts: string[] = [];
+        const captionEls = doc.querySelectorAll('p.typo.caption02.bold, [class*="caption"]');
+        captionEls.forEach((el: any) => {
+          const rect = el.getBoundingClientRect();
+          const text = el.textContent?.trim() || '';
+          // 해당 컬럼 영역 내에 있고 시간 형식인 요소
+          if (
+            rect.left >= colLeft - 10 &&
+            rect.right <= colRight + 10 &&
+            rect.top > headerRect.bottom &&
+            text.match(/\d{1,2}:\d{2}\s*~\s*\d{1,2}:\d{2}/)
+          ) {
+            timeTexts.push(text);
+          }
+        });
+
+        return timeTexts;
+      },
+      { colIdx: colIndex },
+    );
+
+    // 시간 겹침 확인
+    const reqStart = this.timeToMinutes(startTime);
+    const reqEnd = this.timeToMinutes(endTime);
+
+    for (const timeText of bookingTimes) {
+      const match = timeText.match(/(\d{1,2}:\d{2})\s*~\s*(\d{1,2}:\d{2})/);
+      if (!match) continue;
+
+      const bookStart = this.timeToMinutes(match[1]);
+      const bookEnd = this.timeToMinutes(match[2]);
+
+      // 겹치는지 확인: NOT (끝 <= 시작 OR 시작 >= 끝)
+      if (!(reqEnd <= bookStart || reqStart >= bookEnd)) {
+        return false;
+      }
+    }
+
     return true;
+  }
+
+  private timeToMinutes(time: string): number {
+    const [h, m] = time.split(':').map(Number);
+    return h * 60 + m;
   }
 }
 
