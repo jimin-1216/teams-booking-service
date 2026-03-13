@@ -26,7 +26,8 @@ async function main() {
     {
       MicrosoftAppId: config.bot.appId,
       MicrosoftAppPassword: config.bot.appPassword,
-      MicrosoftAppType: 'SingleTenant',
+      MicrosoftAppTenantId: config.bot.appTenantId,
+      MicrosoftAppType: config.bot.appType,
     } as ConfigurationBotFrameworkAuthenticationOptions,
   );
 

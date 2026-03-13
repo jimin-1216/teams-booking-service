@@ -1,0 +1,70 @@
+name: Deploy to Azure Container Apps
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  RESOURCE_GROUP: cg-teams
+  CONTAINER_APP_NAME: cg-teams-booking
+  CONTAINER_APP_ENV: cg-teams-env
+  LOCATION: koreacentral
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Deploy to Container Apps
+        uses: azure/container-apps-deploy-action@v2
+        with:
+          appSourcePath: ${{ github.workspace }}
+          dockerfilePath: Dockerfile
+          resourceGroup: ${{ env.RESOURCE_GROUP }}
+          containerAppName: ${{ env.CONTAINER_APP_NAME }}
+          containerAppEnvironment: ${{ env.CONTAINER_APP_ENV }}
+          location: ${{ env.LOCATION }}
+          targetPort: 3978
+          ingress: external
+          envVars: >-
+            MICROSOFT_APP_ID=secretref:microsoft-app-id
+            MICROSOFT_APP_PASSWORD=secretref:microsoft-app-password
+            MICROSOFT_APP_TENANT_ID=secretref:microsoft-app-tenant-id
+            MILE_USERNAME=secretref:mile-username
+            MILE_PASSWORD=secretref:mile-password
+            NODE_ENV=production
+            PORT=3978
+
+      - name: Set Container App Secrets
+        uses: azure/cli@v2
+        with:
+          inlineScript: |
+            az containerapp secret set \
+              --name ${{ env.CONTAINER_APP_NAME }} \
+              --resource-group ${{ env.RESOURCE_GROUP }} \
+              --secrets \
+                microsoft-app-id=${{ secrets.MICROSOFT_APP_ID }} \
+                microsoft-app-password=${{ secrets.MICROSOFT_APP_PASSWORD }} \
+                microsoft-app-tenant-id=${{ secrets.MICROSOFT_APP_TENANT_ID }} \
+                mile-username=${{ secrets.MILE_USERNAME }} \
+                mile-password=${{ secrets.MILE_PASSWORD }}
+
+            az containerapp update \
+              --name ${{ env.CONTAINER_APP_NAME }} \
+              --resource-group ${{ env.RESOURCE_GROUP }} \
+              --set-env-vars \
+                MICROSOFT_APP_ID=secretref:microsoft-app-id \
+                MICROSOFT_APP_PASSWORD=secretref:microsoft-app-password \
+                MICROSOFT_APP_TENANT_ID=secretref:microsoft-app-tenant-id \
+                MILE_USERNAME=secretref:mile-username \
+                MILE_PASSWORD=secretref:mile-password \
+                NODE_ENV=production \
+                PORT=3978

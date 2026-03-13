@@ -13,10 +13,12 @@ export const config = {
     workspaceName: process.env.MILE_WORKSPACE || '서울창업허브',
   },
 
-  // Azure Bot Service
+  // Azure Bot Service (SingleTenant)
   bot: {
     appId: process.env.MICROSOFT_APP_ID || '',
     appPassword: process.env.MICROSOFT_APP_PASSWORD || '',
+    appTenantId: process.env.MICROSOFT_APP_TENANT_ID || '',
+    appType: 'SingleTenant' as const,
     port: parseInt(process.env.PORT || '3978', 10),
   },
 
@@ -52,6 +54,7 @@ export function validateConfig(): void {
     { key: 'MILE_PASSWORD', value: config.mile.password },
     { key: 'MICROSOFT_APP_ID', value: config.bot.appId },
     { key: 'MICROSOFT_APP_PASSWORD', value: config.bot.appPassword },
+    { key: 'MICROSOFT_APP_TENANT_ID', value: config.bot.appTenantId },
   ];
 
   const missing = required.filter((r) => !r.value);
