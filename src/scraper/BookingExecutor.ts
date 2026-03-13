@@ -20,6 +20,7 @@ export interface BookingParams {
   startTime: string; // HH:mm
   endTime: string; // HH:mm
   userName: string; // 예약자 이름 (메모에 기입)
+  memo?: string; // 사유/용건
 }
 
 export interface BookingResult {
@@ -45,7 +46,10 @@ export class BookingExecutor {
       try {
         await siteAuth.navigateToBookingPage(page);
 
-        // 1. "예약하기" 버튼 클릭하여 예약 폼 열기
+        // 1. 날짜 이동 (폼 열기 전에 — 폼이 해당 날짜를 자동 세팅)
+        await this.navigateToDate(page, params.date);
+
+        // 2. "예약하기" 버튼 클릭하여 예약 폼 열기
         const newBookingBtn = await page.waitForSelector(
           'button.button-solid-primary:has-text("예약하기")',
           { timeout: 10_000 },
@@ -54,22 +58,19 @@ export class BookingExecutor {
         await newBookingBtn.click();
         await page.waitForTimeout(1500);
 
-        // 2. 날짜 설정
-        await this.setBookingDate(page, params.date);
-
-        // 3. 시간 설정
-        await this.setBookingTime(page, params.startTime, params.endTime);
-
-        // 4. 회의실 선택
+        // 3. 회의실 선택 (시간보다 먼저 — React controlled input은 변경 불가)
         await this.selectRoom(page, params.roomName, params.roomBuilding, params.roomFloor);
 
-        // 5. 메모 입력 (예약자 이름)
+        // 4. 메모 입력 (예약자 + 사유)
         const memoInput = await page.$(selectors.bookingForm.memoTextarea);
         if (memoInput) {
-          await memoInput.fill(`예약자: ${params.userName}`);
+          const memoText = params.memo
+            ? `[${params.userName}] ${params.memo}`
+            : `예약자: ${params.userName}`;
+          await memoInput.fill(memoText);
         }
 
-        // 6. 제출 버튼 활성화 대기 및 클릭
+        // 5. 제출 버튼 활성화 대기 및 클릭
         await page.waitForTimeout(500);
         const submitBtn = await page.waitForSelector(
           'button.button-solid-primary:has-text("예약하기"):not(.button-solid-disabled)',
@@ -80,7 +81,7 @@ export class BookingExecutor {
         }
         await submitBtn.click();
 
-        // 7. 예약 완료 대기
+        // 6. 예약 완료 대기
         await page.waitForLoadState('networkidle', { timeout: 10_000 });
         await page.waitForTimeout(2000);
 
@@ -116,74 +117,74 @@ export class BookingExecutor {
   }
 
   /**
-   * 예약 폼에서 날짜 설정
-   * 날짜 입력란 클릭 → 캘린더에서 날짜 선택
+   * 예약 현황 페이지에서 날짜 이동 (폼 열기 전에 호출)
+   * 상단 날짜 네비게이션의 > < 버튼을 좌표 기반으로 클릭
+   * 폼을 열면 현재 표시 중인 날짜가 자동 세팅됨
    */
-  private async setBookingDate(page: Page, dateStr: string): Promise<void> {
+  private async navigateToDate(page: Page, dateStr: string): Promise<void> {
     const [year, month, day] = dateStr.split('-').map(Number);
+    const targetFormatted = `${year}. ${String(month).padStart(2, '0')}. ${String(day).padStart(2, '0')}`;
 
-    // 날짜 입력란 클릭
-    const dateInputs = await page.$$('input.input');
-    for (const input of dateInputs) {
-      const value = await input.inputValue();
-      // 날짜 형식 (YYYY. MM. DD)인 입력란 찾기
-      if (value.match(/\d{4}\.\s*\d{2}\.\s*\d{2}/)) {
-        await input.click();
-        await page.waitForTimeout(500);
+    // 현재 표시된 날짜 확인
+    const getCurrentDate = async (): Promise<string> => {
+      return page.evaluate(() => {
+        const doc = (globalThis as any).document;
+        const btn = doc.querySelector('button.button-text.secondary.enabled.medium');
+        return btn?.textContent?.trim() || '';
+      });
+    };
 
-        // 캘린더에서 날짜 클릭
-        // 캘린더가 올바른 월을 표시하는지 확인하고 내비게이션
-        const dayBtn = await page.$(
-          `button.rdrDay:not(.rdrDayPassive):not(.rdrDayDisabled) >> text="${day}"`,
-        );
-        if (dayBtn) {
-          await dayBtn.click();
-          await page.waitForTimeout(500);
+    const currentDate = await getCurrentDate();
+    if (currentDate.includes(targetFormatted)) return;
+
+    // 날짜 버튼 위치 분석 → > < 버튼 좌표 계산
+    const navInfo = await page.evaluate(() => {
+      const doc = (globalThis as any).document;
+      const results: Array<{ text: string; x: number; y: number; w: number; h: number; hasSvg: boolean }> = [];
+      doc.querySelectorAll('button, [role="button"]').forEach((btn: any) => {
+        const rect = btn.getBoundingClientRect();
+        if (rect.y > 75 && rect.y < 135 && rect.width > 0) {
+          results.push({
+            text: btn.textContent?.trim()?.substring(0, 30) || '',
+            x: Math.round(rect.x), y: Math.round(rect.y),
+            w: Math.round(rect.width), h: Math.round(rect.height),
+            hasSvg: !!btn.querySelector('svg'),
+          });
         }
-        break;
-      }
+      });
+      return results;
+    });
+
+    const dateBtn = navInfo.find(b => b.text?.includes(String(year)));
+    const nextBtns = navInfo.filter(b => b.hasSvg && b.x > (dateBtn?.x || 500));
+    const prevBtns = navInfo.filter(b => b.hasSvg && b.x < (dateBtn?.x || 500));
+
+    // 목표 날짜와 현재 날짜의 차이 계산
+    const currentParts = currentDate.match(/(\d{4})\.\s*(\d{2})\.\s*(\d{2})/);
+    if (!currentParts) return;
+
+    const currentD = new Date(+currentParts[1], +currentParts[2] - 1, +currentParts[3]);
+    const targetD = new Date(year, month - 1, day);
+    const diffDays = Math.round((targetD.getTime() - currentD.getTime()) / (1000 * 60 * 60 * 24));
+
+    const isForward = diffDays > 0;
+    const btn = isForward ? nextBtns[0] : prevBtns[prevBtns.length - 1];
+    if (!btn) return;
+
+    for (let i = 0; i < Math.abs(diffDays); i++) {
+      await page.mouse.click(btn.x + btn.w / 2, btn.y + btn.h / 2);
+      await page.waitForTimeout(300);
     }
+
+    // 날짜 변경 확인
+    await page.waitForTimeout(500);
+    const newDate = await getCurrentDate();
+    logger.info('날짜 이동', { from: currentDate, to: newDate, target: targetFormatted });
   }
 
   /**
-   * 예약 폼에서 시작/종료 시간 설정
-   * 시간 입력란을 클릭하고 시간 선택
-   */
-  private async setBookingTime(page: Page, startTime: string, endTime: string): Promise<void> {
-    const timeInputs = await page.$$('input.input');
-    const timeFields: Array<{ el: typeof timeInputs[0]; value: string }> = [];
-
-    for (const input of timeInputs) {
-      const value = await input.inputValue();
-      // HH:mm 형식인 입력란 찾기
-      if (value.match(/^\d{1,2}:\d{2}$/)) {
-        timeFields.push({ el: input, value });
-      }
-    }
-
-    // 시작 시간 (첫 번째 시간 필드)
-    if (timeFields.length >= 1) {
-      await timeFields[0].el.click();
-      await page.waitForTimeout(300);
-      await timeFields[0].el.fill('');
-      await timeFields[0].el.type(startTime);
-      await page.keyboard.press('Tab');
-      await page.waitForTimeout(300);
-    }
-
-    // 종료 시간 (두 번째 시간 필드)
-    if (timeFields.length >= 2) {
-      await timeFields[1].el.click();
-      await page.waitForTimeout(300);
-      await timeFields[1].el.fill('');
-      await timeFields[1].el.type(endTime);
-      await page.keyboard.press('Tab');
-      await page.waitForTimeout(300);
-    }
-  }
-
-  /**
-   * 회의실 선택: 검색 입력 → 드롭다운에서 클릭
+   * 회의실 선택: 검색 입력 → 드롭다운에서 div.css-4d7k9p 항목 클릭
+   * 드롭다운 텍스트 형식: "회의실 ①본관 - 7층 | 4인"
    */
   private async selectRoom(
     page: Page,
@@ -191,32 +192,53 @@ export class BookingExecutor {
     building: string,
     floor: number,
   ): Promise<void> {
-    const roomSearch = await page.$(selectors.bookingForm.roomSearchInput);
-    if (!roomSearch) throw new Error('회의실 검색 필드를 찾을 수 없습니다.');
+    // 폼 내 회의실 input (x > 830인 input 중 5번째)
+    const roomInput = await page.evaluate(() => {
+      const doc = (globalThis as any).document;
+      const inputs = Array.from(doc.querySelectorAll('input.input')) as any[];
+      const formInputs = inputs.filter((el: any) => el.getBoundingClientRect().x > 830);
+      return formInputs.length >= 5 ? formInputs[4].getBoundingClientRect() : null;
+    });
 
-    // 회의실명으로 검색
-    await roomSearch.click();
-    await roomSearch.fill(roomName);
-    await page.waitForTimeout(1000);
-
-    // 드롭다운에서 매칭되는 회의실 클릭
-    // 건물-층 정보로 정확한 회의실 선택
-    const targetLocation = `${building} - ${floor}층`;
-    const option = await page.$(`:has-text("${targetLocation}")`);
-    if (option) {
-      await option.click();
-      await page.waitForTimeout(500);
+    if (roomInput) {
+      await page.mouse.click(roomInput.x + roomInput.width / 2, roomInput.y + roomInput.height / 2);
+      await page.waitForTimeout(1000);
     } else {
-      // 검색 결과의 첫 번째 항목 클릭
-      const firstOption = await page.$('[class*="option"], [class*="item"]');
-      if (firstOption) {
-        await firstOption.click();
-      } else {
-        throw new Error(
-          `회의실을 찾을 수 없습니다: ${roomName} (${targetLocation})`,
-        );
-      }
+      // fallback: selector 기반
+      const roomSearch = await page.$(selectors.bookingForm.roomSearchInput);
+      if (!roomSearch) throw new Error('회의실 검색 필드를 찾을 수 없습니다.');
+      await roomSearch.click();
+      await page.waitForTimeout(1000);
     }
+
+    // 드롭다운 항목(div.css-4d7k9p)에서 회의실명+건물+층으로 매칭
+    const targetText = `${building} - ${floor}층`;
+    const clicked = await page.evaluate(({ name, location }) => {
+      const doc = (globalThis as any).document;
+      const items = Array.from(doc.querySelectorAll('div.css-4d7k9p')) as any[];
+      for (const item of items) {
+        const text = item.textContent || '';
+        if (text.includes(name) && text.includes(location)) {
+          item.click();
+          return true;
+        }
+      }
+      // fallback: 층만 매칭
+      for (const item of items) {
+        const text = item.textContent || '';
+        if (text.includes(location)) {
+          item.click();
+          return true;
+        }
+      }
+      return false;
+    }, { name: roomName, location: targetText });
+
+    if (!clicked) {
+      throw new Error(`회의실을 찾을 수 없습니다: ${roomName} (${targetText})`);
+    }
+
+    await page.waitForTimeout(500);
   }
 
   /**
@@ -235,58 +257,64 @@ export class BookingExecutor {
       try {
         await siteAuth.ensureAuthenticated(page);
 
-        // 나의 예약/참석 페이지로 이동
-        const myBookingsNav = await page.$('p:has-text("나의 예약/참석")');
-        if (myBookingsNav) {
-          await myBookingsNav.click();
+        // 나의 예약/참석 페이지로 이동 (사이드바에서 x < 250인 요소)
+        const navClicked = await page.evaluate(() => {
+          const doc = (globalThis as any).document;
+          const els = Array.from(doc.querySelectorAll('*')) as any[];
+          for (const el of els) {
+            if (el.textContent?.trim() === '나의 예약/참석' && el.getBoundingClientRect().x < 250) {
+              el.click();
+              return true;
+            }
+          }
+          return false;
+        });
+        if (navClicked) {
           await page.waitForLoadState('networkidle', { timeout: 10_000 });
           await page.waitForTimeout(2000);
         }
 
-        // 해당 예약 찾기 (날짜, 시간, 회의실 명으로 매칭)
-        const deleteButtons = await page.$$('button:has-text("삭제하기")');
+        // 해당 예약 찾기 + 삭제 (evaluate 내에서 처리하여 오버레이 문제 회피)
+        const found = await page.evaluate(({ targetRoom, targetTime }) => {
+          const doc = (globalThis as any).document;
+          const buttons = Array.from(doc.querySelectorAll('button')) as any[];
+          const deleteButtons = buttons.filter((b: any) => b.textContent?.trim() === '삭제하기');
 
-        // 각 삭제 버튼의 근처 정보를 확인하여 맞는 예약 찾기
-        let found = false;
-        for (const btn of deleteButtons) {
-          const parent = await btn.evaluateHandle((el) => {
-            // 삭제 버튼의 부모 컨테이너에서 예약 정보 확인
-            let container = el.parentElement;
+          for (const btn of deleteButtons) {
+            // 부모 컨테이너에서 예약 정보 확인
+            let container = btn.parentElement;
             for (let i = 0; i < 5; i++) {
               if (!container) break;
-              if (container.textContent && container.textContent.length > 50) {
-                return container;
-              }
+              if (container.textContent && container.textContent.length > 50) break;
               container = container.parentElement;
             }
-            return container || el.parentElement;
-          });
-
-          if (parent) {
-            const text = await parent.evaluate((el: any) => el.textContent || '');
-            // 회의실명과 시간으로 매칭
-            if (text.includes(roomName) && text.includes(startTime)) {
-              await btn.click();
-              await page.waitForTimeout(1000);
-
-              // 확인 대화상자 처리
-              const confirmBtn = await page.$('button:has-text("확인"), button:has-text("삭제")');
-              if (confirmBtn) {
-                await confirmBtn.click();
-                await page.waitForLoadState('networkidle', { timeout: 10_000 });
-              }
-
-              found = true;
-              break;
+            const text = container?.textContent || '';
+            if (text.includes(targetRoom) && text.includes(targetTime)) {
+              btn.scrollIntoView({ behavior: 'instant', block: 'center' });
+              btn.click();
+              return true;
             }
           }
-        }
+          return false;
+        }, { targetRoom: roomName, targetTime: startTime });
 
         if (!found) {
-          throw new Error(
-            `예약을 찾을 수 없습니다: ${roomName} ${date} ${startTime}`,
-          );
+          throw new Error(`예약을 찾을 수 없습니다: ${roomName} ${date} ${startTime}`);
         }
+
+        await page.waitForTimeout(1000);
+
+        // 확인 대화상자 처리 (evaluate로 클릭)
+        await page.evaluate(() => {
+          const doc = (globalThis as any).document;
+          const buttons = Array.from(doc.querySelectorAll('button')) as any[];
+          const confirmBtn = buttons.find((b: any) => {
+            const text = b.textContent?.trim();
+            return text === '삭제' || text === '확인';
+          });
+          if (confirmBtn) confirmBtn.click();
+        });
+        await page.waitForLoadState('networkidle', { timeout: 10_000 });
 
         logger.info('예약 취소 성공', {
           duration_ms: Date.now() - start,

@@ -15,31 +15,34 @@ export interface Room {
 }
 
 export class RoomRepository {
+  private static readonly SELECT_COLS =
+    `SELECT id, name, COALESCE(building, '') as building, floor, capacity, external_id as externalId, created_at as createdAt, updated_at as updatedAt`;
+
   findAll(): Room[] {
     const db = getDatabase();
     return db
-      .prepare('SELECT id, name, COALESCE(building, "") as building, floor, capacity, external_id as externalId, created_at as createdAt, updated_at as updatedAt FROM rooms ORDER BY floor, name')
+      .prepare(`${RoomRepository.SELECT_COLS} FROM rooms ORDER BY floor, name`)
       .all() as Room[];
   }
 
   findByFloor(floor: number): Room[] {
     const db = getDatabase();
     return db
-      .prepare('SELECT id, name, COALESCE(building, "") as building, floor, capacity, external_id as externalId, created_at as createdAt, updated_at as updatedAt FROM rooms WHERE floor = ? ORDER BY name')
+      .prepare(`${RoomRepository.SELECT_COLS} FROM rooms WHERE floor = ? ORDER BY name`)
       .all(floor) as Room[];
   }
 
   findById(id: string): Room | undefined {
     const db = getDatabase();
     return db
-      .prepare('SELECT id, name, COALESCE(building, "") as building, floor, capacity, external_id as externalId, created_at as createdAt, updated_at as updatedAt FROM rooms WHERE id = ?')
+      .prepare(`${RoomRepository.SELECT_COLS} FROM rooms WHERE id = ?`)
       .get(id) as Room | undefined;
   }
 
   findByExternalId(externalId: string): Room | undefined {
     const db = getDatabase();
     return db
-      .prepare('SELECT id, name, COALESCE(building, "") as building, floor, capacity, external_id as externalId, created_at as createdAt, updated_at as updatedAt FROM rooms WHERE external_id = ?')
+      .prepare(`${RoomRepository.SELECT_COLS} FROM rooms WHERE external_id = ?`)
       .get(externalId) as Room | undefined;
   }
 

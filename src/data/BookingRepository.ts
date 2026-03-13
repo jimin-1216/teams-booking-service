@@ -14,6 +14,7 @@ export interface Booking {
   date: string;
   startTime: string;
   endTime: string;
+  memo: string | null;
   status: BookingStatus;
   externalBookingId: string | null;
   errorMessage: string | null;
@@ -24,6 +25,7 @@ export interface Booking {
 export interface BookingWithRoom extends Booking {
   roomName: string;
   roomFloor: number;
+  roomBuilding: string;
   roomCapacity: number | null;
 }
 
@@ -34,6 +36,7 @@ export interface CreateBookingParams {
   date: string;
   startTime: string;
   endTime: string;
+  memo?: string;
 }
 
 export class BookingRepository {
@@ -45,9 +48,9 @@ export class BookingRepository {
     const id = `bk_${uuidv4()}`;
 
     db.prepare(`
-      INSERT INTO bookings (id, room_id, user_id, user_name, date, start_time, end_time, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')
-    `).run(id, params.roomId, params.userId, params.userName, params.date, params.startTime, params.endTime);
+      INSERT INTO bookings (id, room_id, user_id, user_name, date, start_time, end_time, memo, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+    `).run(id, params.roomId, params.userId, params.userName, params.date, params.startTime, params.endTime, params.memo || null);
 
     logger.info('예약 생성 (pending)', { bookingId: id, roomId: params.roomId });
 
@@ -101,7 +104,7 @@ export class BookingRepository {
     return db
       .prepare(`
         SELECT id, room_id as roomId, user_id as userId, user_name as userName,
-               date, start_time as startTime, end_time as endTime,
+               date, start_time as startTime, end_time as endTime, memo,
                status, external_booking_id as externalBookingId,
                error_message as errorMessage,
                created_at as createdAt, updated_at as updatedAt
@@ -118,11 +121,11 @@ export class BookingRepository {
     return db
       .prepare(`
         SELECT b.id, b.room_id as roomId, b.user_id as userId, b.user_name as userName,
-               b.date, b.start_time as startTime, b.end_time as endTime,
+               b.date, b.start_time as startTime, b.end_time as endTime, b.memo,
                b.status, b.external_booking_id as externalBookingId,
                b.error_message as errorMessage,
                b.created_at as createdAt, b.updated_at as updatedAt,
-               r.name as roomName, r.floor as roomFloor, r.capacity as roomCapacity
+               r.name as roomName, r.floor as roomFloor, r.building as roomBuilding, r.capacity as roomCapacity
         FROM bookings b
         JOIN rooms r ON b.room_id = r.id
         WHERE b.user_id = ? AND b.status IN ('confirmed', 'pending')
@@ -139,7 +142,7 @@ export class BookingRepository {
     return db
       .prepare(`
         SELECT id, room_id as roomId, user_id as userId, user_name as userName,
-               date, start_time as startTime, end_time as endTime,
+               date, start_time as startTime, end_time as endTime, memo,
                status, external_booking_id as externalBookingId,
                error_message as errorMessage,
                created_at as createdAt, updated_at as updatedAt
@@ -159,11 +162,11 @@ export class BookingRepository {
     return db
       .prepare(`
         SELECT b.id, b.room_id as roomId, b.user_id as userId, b.user_name as userName,
-               b.date, b.start_time as startTime, b.end_time as endTime,
+               b.date, b.start_time as startTime, b.end_time as endTime, b.memo,
                b.status, b.external_booking_id as externalBookingId,
                b.error_message as errorMessage,
                b.created_at as createdAt, b.updated_at as updatedAt,
-               r.name as roomName, r.floor as roomFloor, r.capacity as roomCapacity
+               r.name as roomName, r.floor as roomFloor, r.building as roomBuilding, r.capacity as roomCapacity
         FROM bookings b
         JOIN rooms r ON b.room_id = r.id
         WHERE b.date >= ? AND b.status = 'confirmed'

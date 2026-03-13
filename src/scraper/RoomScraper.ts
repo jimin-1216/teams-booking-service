@@ -259,33 +259,62 @@ export class RoomScraper {
   }
 
   /**
-   * 캘린더에서 날짜 선택
-   * 예약 현황 페이지 상단의 날짜 버튼 → rdrDay 캘린더
+   * 날짜 이동: 상단 < > 버튼을 좌표 기반으로 클릭
+   * (캘린더 방식은 React에서 동작 불안정 → 네비 버튼 사용)
    */
   private async setDate(page: Page, dateStr: string): Promise<void> {
     const [year, month, day] = dateStr.split('-').map(Number);
+    const targetFormatted = `${year}. ${String(month).padStart(2, '0')}. ${String(day).padStart(2, '0')}`;
 
-    // 현재 표시된 날짜와 비교
-    const dateDisplay = await page.$('button:has-text(".")');
-    if (!dateDisplay) return;
+    // 현재 표시된 날짜 확인
+    const currentDate = await page.evaluate(() => {
+      const doc = (globalThis as any).document;
+      const btn = doc.querySelector('button.button-text.secondary.enabled.medium');
+      return btn?.textContent?.trim() || '';
+    });
+    if (currentDate.includes(targetFormatted)) return;
 
-    const currentText = await dateDisplay.textContent();
-    if (!currentText) return;
+    // 날짜 버튼 위치 분석
+    const navInfo = await page.evaluate(() => {
+      const doc = (globalThis as any).document;
+      const results: Array<{ text: string; x: number; y: number; w: number; h: number; hasSvg: boolean }> = [];
+      doc.querySelectorAll('button, [role="button"]').forEach((btn: any) => {
+        const rect = btn.getBoundingClientRect();
+        if (rect.y > 75 && rect.y < 135 && rect.width > 0) {
+          results.push({
+            text: btn.textContent?.trim()?.substring(0, 30) || '',
+            x: Math.round(rect.x), y: Math.round(rect.y),
+            w: Math.round(rect.width), h: Math.round(rect.height),
+            hasSvg: !!btn.querySelector('svg'),
+          });
+        }
+      });
+      return results;
+    });
 
-    const dateFormatted = `${year}. ${String(month).padStart(2, '0')}. ${String(day).padStart(2, '0')}`;
-    if (currentText.includes(dateFormatted)) return;
+    const dateBtn = navInfo.find(b => b.text?.includes(String(year)));
+    const nextBtns = navInfo.filter(b => b.hasSvg && b.x > (dateBtn?.x || 500));
+    const prevBtns = navInfo.filter(b => b.hasSvg && b.x < (dateBtn?.x || 500));
 
-    // 날짜 변경: < > 버튼 또는 캘린더 직접 선택
-    await dateDisplay.click();
-    await page.waitForTimeout(500);
+    // 차이 계산
+    const currentParts = currentDate.match(/(\d{4})\.\s*(\d{2})\.\s*(\d{2})/);
+    if (!currentParts) return;
 
-    const dayButton = await page.$(
-      `button.rdrDay:not(.rdrDayPassive):not(.rdrDayDisabled) >> text="${day}"`,
-    );
-    if (dayButton) {
-      await dayButton.click();
-      await page.waitForTimeout(500);
+    const currentD = new Date(+currentParts[1], +currentParts[2] - 1, +currentParts[3]);
+    const targetD = new Date(year, month - 1, day);
+    const diffDays = Math.round((targetD.getTime() - currentD.getTime()) / (1000 * 60 * 60 * 24));
+
+    const isForward = diffDays > 0;
+    const btn = isForward ? nextBtns[0] : prevBtns[prevBtns.length - 1];
+    if (!btn) return;
+
+    for (let i = 0; i < Math.abs(diffDays); i++) {
+      await page.mouse.click(btn.x + btn.w / 2, btn.y + btn.h / 2);
+      await page.waitForTimeout(300);
     }
+
+    await page.waitForTimeout(500);
+    logger.info('날짜 이동', { from: currentDate, target: targetFormatted, diff: diffDays });
   }
 
   /**

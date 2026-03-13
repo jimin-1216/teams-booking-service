@@ -164,7 +164,9 @@ export class BookingBot extends TeamsActivityHandler {
    * 회의실 예약 실행
    */
   private async handleBookRoom(context: TurnContext, data: Record<string, string>): Promise<void> {
-    const { roomId, roomName, roomFloor, date, startTime, endTime } = data;
+    const { roomId, roomName, roomFloor, date, startTime, endTime, memoFieldId } = data;
+    // memo: Action.ShowCard의 Input.Text에서 입력된 값 (id가 동적)
+    const memo = memoFieldId ? data[memoFieldId] : (data.memo || '');
     const userId = context.activity.from.id;
     const userName = context.activity.from.name || 'Unknown';
 
@@ -180,6 +182,7 @@ export class BookingBot extends TeamsActivityHandler {
       date,
       startTime,
       endTime,
+      memo: memo || undefined,
     });
 
     // 2. 센터 예약 사이트에서 실제 예약 실행
@@ -193,6 +196,7 @@ export class BookingBot extends TeamsActivityHandler {
       startTime,
       endTime,
       userName,
+      memo: memo || undefined,
     });
 
     // 3. 결과에 따라 DB 상태 업데이트
@@ -210,6 +214,7 @@ export class BookingBot extends TeamsActivityHandler {
             startTime,
             endTime,
             userName,
+            memo || undefined,
           ),
         ],
       });

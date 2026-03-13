@@ -97,18 +97,38 @@ export class CardBuilder {
                   type: 'ActionSet',
                   actions: [
                     {
-                      type: 'Action.Submit',
+                      type: 'Action.ShowCard',
                       title: '예약',
-                      style: 'positive',
-                      data: {
-                        action: 'bookRoom',
-                        roomId: room.id,
-                        roomName: room.name,
-                        roomBuilding: room.building,
-                        roomFloor: room.floor,
-                        date,
-                        startTime,
-                        endTime,
+                      card: {
+                        type: 'AdaptiveCard',
+                        body: [
+                          {
+                            type: 'Input.Text',
+                            id: `memo_${room.id}`,
+                            label: '사유/용건',
+                            placeholder: '회의 목적을 입력하세요',
+                            isRequired: true,
+                            errorMessage: '사유를 입력해주세요',
+                          },
+                        ],
+                        actions: [
+                          {
+                            type: 'Action.Submit',
+                            title: '예약 확정',
+                            style: 'positive',
+                            data: {
+                              action: 'bookRoom',
+                              roomId: room.id,
+                              roomName: room.name,
+                              roomBuilding: room.building,
+                              roomFloor: room.floor,
+                              date,
+                              startTime,
+                              endTime,
+                              memoFieldId: `memo_${room.id}`,
+                            },
+                          },
+                        ],
                       },
                     },
                   ],
@@ -138,7 +158,19 @@ export class CardBuilder {
     startTime: string,
     endTime: string,
     userName: string,
+    memo?: string,
   ): Attachment {
+    const facts = [
+      { title: '장소', value: `${floor}층 ${roomName}` },
+      { title: '날짜', value: date },
+      { title: '시간', value: `${startTime} - ${endTime}` },
+      { title: '예약자', value: userName },
+    ];
+    if (memo) {
+      facts.push({ title: '사유', value: memo });
+    }
+    facts.push({ title: '예약번호', value: bookingId });
+
     return CardFactory.adaptiveCard({
       type: 'AdaptiveCard',
       version: '1.5',
@@ -152,13 +184,7 @@ export class CardBuilder {
         },
         {
           type: 'FactSet',
-          facts: [
-            { title: '장소', value: `${floor}층 ${roomName}` },
-            { title: '날짜', value: date },
-            { title: '시간', value: `${startTime} - ${endTime}` },
-            { title: '예약자', value: userName },
-            { title: '예약번호', value: bookingId },
-          ],
+          facts,
         },
       ],
       actions: [
@@ -239,6 +265,13 @@ export class CardBuilder {
                       text: `${booking.date} ${booking.startTime}-${booking.endTime}`,
                       spacing: 'None',
                     },
+                    ...(booking.memo ? [{
+                      type: 'TextBlock',
+                      text: `사유: ${booking.memo}`,
+                      spacing: 'None',
+                      size: 'Small',
+                      color: 'Accent',
+                    }] : []),
                   ],
                 },
                 {
