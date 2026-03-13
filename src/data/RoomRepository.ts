@@ -77,7 +77,7 @@ export class RoomRepository {
 
     const transaction = db.transaction((items: typeof rooms) => {
       for (const room of items) {
-        upsertStmt.run(room.id, room.name, room.floor, room.capacity, room.externalId);
+        upsertStmt.run(room.id, room.name, room.building || '', room.floor, room.capacity, room.externalId);
       }
     });
 

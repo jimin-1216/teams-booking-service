@@ -5,12 +5,20 @@ import { createLogger } from '../utils/logger';
 import { browserPool } from './BrowserPool';
 import { siteAuth } from './SiteAuthenticator';
 import { enqueueScraperTask } from '../utils/queue';
+import { navigateToDate } from './DateNavigator';
 
 const logger = createLogger('BookingExecutor');
 
 const selectors = JSON.parse(
   fs.readFileSync(path.resolve(__dirname, 'selectors.json'), 'utf-8'),
 );
+
+/** 예약 폼 슬라이드 패널의 X좌표 기준 (우측 패널 입력필드) */
+const FORM_PANEL_X_MIN = 830;
+/** 회의실 input은 폼 내 5번째 input (0-indexed: 4) */
+const ROOM_INPUT_INDEX = 4;
+/** 사이드바 네비게이션 X좌표 상한 */
+const SIDEBAR_X_MAX = 250;
 
 export interface BookingParams {
   roomName: string; // 회의실 이름 (예: "소회의실①")
@@ -47,7 +55,7 @@ export class BookingExecutor {
         await siteAuth.navigateToBookingPage(page);
 
         // 1. 날짜 이동 (폼 열기 전에 — 폼이 해당 날짜를 자동 세팅)
-        await this.navigateToDate(page, params.date);
+        await navigateToDate(page, params.date);
 
         // 2. "예약하기" 버튼 클릭하여 예약 폼 열기
         const newBookingBtn = await page.waitForSelector(
@@ -117,72 +125,6 @@ export class BookingExecutor {
   }
 
   /**
-   * 예약 현황 페이지에서 날짜 이동 (폼 열기 전에 호출)
-   * 상단 날짜 네비게이션의 > < 버튼을 좌표 기반으로 클릭
-   * 폼을 열면 현재 표시 중인 날짜가 자동 세팅됨
-   */
-  private async navigateToDate(page: Page, dateStr: string): Promise<void> {
-    const [year, month, day] = dateStr.split('-').map(Number);
-    const targetFormatted = `${year}. ${String(month).padStart(2, '0')}. ${String(day).padStart(2, '0')}`;
-
-    // 현재 표시된 날짜 확인
-    const getCurrentDate = async (): Promise<string> => {
-      return page.evaluate(() => {
-        const doc = (globalThis as any).document;
-        const btn = doc.querySelector('button.button-text.secondary.enabled.medium');
-        return btn?.textContent?.trim() || '';
-      });
-    };
-
-    const currentDate = await getCurrentDate();
-    if (currentDate.includes(targetFormatted)) return;
-
-    // 날짜 버튼 위치 분석 → > < 버튼 좌표 계산
-    const navInfo = await page.evaluate(() => {
-      const doc = (globalThis as any).document;
-      const results: Array<{ text: string; x: number; y: number; w: number; h: number; hasSvg: boolean }> = [];
-      doc.querySelectorAll('button, [role="button"]').forEach((btn: any) => {
-        const rect = btn.getBoundingClientRect();
-        if (rect.y > 75 && rect.y < 135 && rect.width > 0) {
-          results.push({
-            text: btn.textContent?.trim()?.substring(0, 30) || '',
-            x: Math.round(rect.x), y: Math.round(rect.y),
-            w: Math.round(rect.width), h: Math.round(rect.height),
-            hasSvg: !!btn.querySelector('svg'),
-          });
-        }
-      });
-      return results;
-    });
-
-    const dateBtn = navInfo.find(b => b.text?.includes(String(year)));
-    const nextBtns = navInfo.filter(b => b.hasSvg && b.x > (dateBtn?.x || 500));
-    const prevBtns = navInfo.filter(b => b.hasSvg && b.x < (dateBtn?.x || 500));
-
-    // 목표 날짜와 현재 날짜의 차이 계산
-    const currentParts = currentDate.match(/(\d{4})\.\s*(\d{2})\.\s*(\d{2})/);
-    if (!currentParts) return;
-
-    const currentD = new Date(+currentParts[1], +currentParts[2] - 1, +currentParts[3]);
-    const targetD = new Date(year, month - 1, day);
-    const diffDays = Math.round((targetD.getTime() - currentD.getTime()) / (1000 * 60 * 60 * 24));
-
-    const isForward = diffDays > 0;
-    const btn = isForward ? nextBtns[0] : prevBtns[prevBtns.length - 1];
-    if (!btn) return;
-
-    for (let i = 0; i < Math.abs(diffDays); i++) {
-      await page.mouse.click(btn.x + btn.w / 2, btn.y + btn.h / 2);
-      await page.waitForTimeout(300);
-    }
-
-    // 날짜 변경 확인
-    await page.waitForTimeout(500);
-    const newDate = await getCurrentDate();
-    logger.info('날짜 이동', { from: currentDate, to: newDate, target: targetFormatted });
-  }
-
-  /**
    * 회의실 선택: 검색 입력 → 드롭다운에서 div.css-4d7k9p 항목 클릭
    * 드롭다운 텍스트 형식: "회의실 ①본관 - 7층 | 4인"
    */
@@ -192,13 +134,13 @@ export class BookingExecutor {
     building: string,
     floor: number,
   ): Promise<void> {
-    // 폼 내 회의실 input (x > 830인 input 중 5번째)
-    const roomInput = await page.evaluate(() => {
+    // 폼 내 회의실 input (슬라이드 패널 영역의 input 중 ROOM_INPUT_INDEX번째)
+    const roomInput = await page.evaluate(({ panelXMin, inputIdx }) => {
       const doc = (globalThis as any).document;
       const inputs = Array.from(doc.querySelectorAll('input.input')) as any[];
-      const formInputs = inputs.filter((el: any) => el.getBoundingClientRect().x > 830);
-      return formInputs.length >= 5 ? formInputs[4].getBoundingClientRect() : null;
-    });
+      const formInputs = inputs.filter((el: any) => el.getBoundingClientRect().x > panelXMin);
+      return formInputs.length > inputIdx ? formInputs[inputIdx].getBoundingClientRect() : null;
+    }, { panelXMin: FORM_PANEL_X_MIN, inputIdx: ROOM_INPUT_INDEX });
 
     if (roomInput) {
       await page.mouse.click(roomInput.x + roomInput.width / 2, roomInput.y + roomInput.height / 2);
@@ -257,18 +199,19 @@ export class BookingExecutor {
       try {
         await siteAuth.ensureAuthenticated(page);
 
-        // 나의 예약/참석 페이지로 이동 (사이드바에서 x < 250인 요소)
-        const navClicked = await page.evaluate(() => {
+        // 나의 예약/참석 페이지로 이동 (사이드바 영역 내 요소)
+        const navClicked = await page.evaluate((sidebarXMax) => {
           const doc = (globalThis as any).document;
-          const els = Array.from(doc.querySelectorAll('*')) as any[];
-          for (const el of els) {
-            if (el.textContent?.trim() === '나의 예약/참석' && el.getBoundingClientRect().x < 250) {
+          // 사이드바 내 네비게이션 링크를 타겟팅
+          const navLinks = Array.from(doc.querySelectorAll('a, button, [role="menuitem"], span')) as any[];
+          for (const el of navLinks) {
+            if (el.textContent?.trim() === '나의 예약/참석' && el.getBoundingClientRect().x < sidebarXMax) {
               el.click();
               return true;
             }
           }
           return false;
-        });
+        }, SIDEBAR_X_MAX);
         if (navClicked) {
           await page.waitForLoadState('networkidle', { timeout: 10_000 });
           await page.waitForTimeout(2000);
