@@ -14,7 +14,8 @@ FROM mcr.microsoft.com/playwright:v1.49.1-jammy
 WORKDIR /app
 
 COPY package.json package-lock.json* ./
-RUN npm ci --omit=dev --ignore-scripts
+RUN apt-get update && apt-get install -y python3 make g++ && rm -rf /var/lib/apt/lists/*
+RUN npm ci --omit=dev
 
 COPY --from=builder /app/dist ./dist
 COPY src/scraper/selectors.json ./dist/scraper/selectors.json
