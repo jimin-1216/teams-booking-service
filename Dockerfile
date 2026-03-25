@@ -9,7 +9,7 @@ COPY src/ ./src/
 RUN npm run build
 
 # Stage 2: Production (base image already includes Chromium)
-FROM mcr.microsoft.com/playwright:v1.49.1-jammy
+FROM mcr.microsoft.com/playwright:v1.58.2-jammy
 
 WORKDIR /app
 
