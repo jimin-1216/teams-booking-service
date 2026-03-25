@@ -10,13 +10,30 @@ env:
   CONTAINER_APP_NAME: cg-teams-booking
   CONTAINER_APP_ENV: cg-teams-env
   LOCATION: eastasia
+  IMAGE_NAME: ghcr.io/${{ github.repository }}:${{ github.sha }}
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        run: |
+          docker build -t ${{ env.IMAGE_NAME }} .
+          docker push ${{ env.IMAGE_NAME }}
 
       - name: Azure Login
         uses: azure/login@v2
@@ -24,24 +41,34 @@ jobs:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
       - name: Deploy to Container Apps
-        uses: azure/container-apps-deploy-action@v2
-        with:
-          appSourcePath: ${{ github.workspace }}
-          dockerfilePath: Dockerfile
-          resourceGroup: ${{ env.RESOURCE_GROUP }}
-          containerAppName: ${{ env.CONTAINER_APP_NAME }}
-          containerAppEnvironment: ${{ env.CONTAINER_APP_ENV }}
-          location: ${{ env.LOCATION }}
-          targetPort: 3978
-          ingress: external
-
-      - name: Set environment variables
         uses: azure/cli@v2
         with:
           inlineScript: |
+            az extension add --name containerapp --upgrade --allow-preview true
+
+            az containerapp create \
+              --name ${{ env.CONTAINER_APP_NAME }} \
+              --resource-group ${{ env.RESOURCE_GROUP }} \
+              --environment ${{ env.CONTAINER_APP_ENV }} \
+              --image ${{ env.IMAGE_NAME }} \
+              --registry-server ghcr.io \
+              --registry-username ${{ github.actor }} \
+              --registry-password ${{ secrets.GITHUB_TOKEN }} \
+              --target-port 3978 \
+              --ingress external \
+              --env-vars \
+                MICROSOFT_APP_ID=${{ secrets.MICROSOFT_APP_ID }} \
+                MICROSOFT_APP_PASSWORD=${{ secrets.MICROSOFT_APP_PASSWORD }} \
+                MICROSOFT_APP_TENANT_ID=${{ secrets.MICROSOFT_APP_TENANT_ID }} \
+                MILE_USERNAME=${{ secrets.MILE_USERNAME }} \
+                MILE_PASSWORD=${{ secrets.MILE_PASSWORD }} \
+                NODE_ENV=production \
+                PORT=3978 \
+              2>&1 || \
             az containerapp update \
               --name ${{ env.CONTAINER_APP_NAME }} \
               --resource-group ${{ env.RESOURCE_GROUP }} \
+              --image ${{ env.IMAGE_NAME }} \
               --set-env-vars \
                 MICROSOFT_APP_ID=${{ secrets.MICROSOFT_APP_ID }} \
                 MICROSOFT_APP_PASSWORD=${{ secrets.MICROSOFT_APP_PASSWORD }} \
@@ -50,3 +77,13 @@ jobs:
                 MILE_PASSWORD=${{ secrets.MILE_PASSWORD }} \
                 NODE_ENV=production \
                 PORT=3978
+
+      - name: Show app URL
+        uses: azure/cli@v2
+        with:
+          inlineScript: |
+            az containerapp show \
+              --name ${{ env.CONTAINER_APP_NAME }} \
+              --resource-group ${{ env.RESOURCE_GROUP }} \
+              --query "properties.configuration.ingress.fqdn" \
+              --output tsv
