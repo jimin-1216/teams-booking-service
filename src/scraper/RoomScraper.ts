@@ -119,6 +119,9 @@ export class RoomScraper {
    * 회의실 위치 클릭 → 건물 선택 → 층 선택
    */
   private async applyFilter(page: Page, building: string, floor: number): Promise<void> {
+    // 확인 다이얼로그가 떠 있으면 닫기 (이전 예약 폼 잔여)
+    await this.dismissConfirmDialog(page);
+
     // 회의실 위치 필터 클릭
     const locationFilter = await page.$("input[placeholder='회의실 위치']");
     if (!locationFilter) throw new Error('회의실 위치 필터를 찾을 수 없습니다.');
@@ -330,6 +333,22 @@ export class RoomScraper {
     }
 
     return true;
+  }
+
+  /**
+   * 예약 폼 확인 다이얼로그 ("예약하기를 통해 확정하지 않으시면...") 닫기
+   */
+  private async dismissConfirmDialog(page: Page): Promise<void> {
+    try {
+      const confirmBtn = page.locator('button:has-text("확인")');
+      if (await confirmBtn.isVisible({ timeout: 1000 })) {
+        await confirmBtn.click();
+        await page.waitForTimeout(500);
+        logger.info('확인 다이얼로그 닫음');
+      }
+    } catch {
+      // 다이얼로그 없으면 무시
+    }
   }
 
   private timeToMinutes(time: string): number {
