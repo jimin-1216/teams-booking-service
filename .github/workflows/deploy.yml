@@ -9,7 +9,7 @@ env:
   RESOURCE_GROUP: cg-teams
   CONTAINER_APP_NAME: cg-teams-booking
   CONTAINER_APP_ENV: cg-teams-env
-  LOCATION: koreacentral
+  LOCATION: eastasia
 
 jobs:
   build-and-deploy:
