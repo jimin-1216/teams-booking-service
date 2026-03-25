@@ -34,11 +34,19 @@ jobs:
           location: ${{ env.LOCATION }}
           targetPort: 3978
           ingress: external
-          environmentVariables: >-
-            MICROSOFT_APP_ID=${{ secrets.MICROSOFT_APP_ID }}
-            MICROSOFT_APP_PASSWORD=${{ secrets.MICROSOFT_APP_PASSWORD }}
-            MICROSOFT_APP_TENANT_ID=${{ secrets.MICROSOFT_APP_TENANT_ID }}
-            MILE_USERNAME=${{ secrets.MILE_USERNAME }}
-            MILE_PASSWORD=${{ secrets.MILE_PASSWORD }}
-            NODE_ENV=production
-            PORT=3978
+
+      - name: Set environment variables
+        uses: azure/cli@v2
+        with:
+          inlineScript: |
+            az containerapp update \
+              --name ${{ env.CONTAINER_APP_NAME }} \
+              --resource-group ${{ env.RESOURCE_GROUP }} \
+              --set-env-vars \
+                MICROSOFT_APP_ID=${{ secrets.MICROSOFT_APP_ID }} \
+                MICROSOFT_APP_PASSWORD=${{ secrets.MICROSOFT_APP_PASSWORD }} \
+                MICROSOFT_APP_TENANT_ID=${{ secrets.MICROSOFT_APP_TENANT_ID }} \
+                MILE_USERNAME=${{ secrets.MILE_USERNAME }} \
+                MILE_PASSWORD=${{ secrets.MILE_PASSWORD }} \
+                NODE_ENV=production \
+                PORT=3978
