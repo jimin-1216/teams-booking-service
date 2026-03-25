@@ -113,8 +113,18 @@ export class SiteAuthenticator {
     if (bookingNav) {
       await bookingNav.click();
       await page.waitForLoadState('networkidle', { timeout: 10_000 });
-      await page.waitForTimeout(1000);
+      await page.waitForTimeout(2000);
     }
+
+    // 예약 현황 페이지 도달 확인, 실패 시 직접 이동
+    if (!page.url().includes('/meeting/')) {
+      logger.warn('예약 현황 페이지 미도달, 직접 이동 시도');
+      await page.goto(`${config.mile.baseUrl}/meeting/schedule`, { waitUntil: 'networkidle' });
+      await page.waitForTimeout(2000);
+    }
+
+    // 회의실 위치 필터가 보일 때까지 대기
+    await page.waitForSelector("input[placeholder='회의실 위치']", { timeout: 10_000 });
   }
 
   async ensureAuthenticated(page: Page): Promise<void> {
