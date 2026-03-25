@@ -34,37 +34,11 @@ jobs:
           location: ${{ env.LOCATION }}
           targetPort: 3978
           ingress: external
-          envVars: >-
-            MICROSOFT_APP_ID=secretref:microsoft-app-id
-            MICROSOFT_APP_PASSWORD=secretref:microsoft-app-password
-            MICROSOFT_APP_TENANT_ID=secretref:microsoft-app-tenant-id
-            MILE_USERNAME=secretref:mile-username
-            MILE_PASSWORD=secretref:mile-password
+          environmentVariables: >-
+            MICROSOFT_APP_ID=${{ secrets.MICROSOFT_APP_ID }}
+            MICROSOFT_APP_PASSWORD=${{ secrets.MICROSOFT_APP_PASSWORD }}
+            MICROSOFT_APP_TENANT_ID=${{ secrets.MICROSOFT_APP_TENANT_ID }}
+            MILE_USERNAME=${{ secrets.MILE_USERNAME }}
+            MILE_PASSWORD=${{ secrets.MILE_PASSWORD }}
             NODE_ENV=production
             PORT=3978
-
-      - name: Set Container App Secrets
-        uses: azure/cli@v2
-        with:
-          inlineScript: |
-            az containerapp secret set \
-              --name ${{ env.CONTAINER_APP_NAME }} \
-              --resource-group ${{ env.RESOURCE_GROUP }} \
-              --secrets \
-                microsoft-app-id=${{ secrets.MICROSOFT_APP_ID }} \
-                microsoft-app-password=${{ secrets.MICROSOFT_APP_PASSWORD }} \
-                microsoft-app-tenant-id=${{ secrets.MICROSOFT_APP_TENANT_ID }} \
-                mile-username=${{ secrets.MILE_USERNAME }} \
-                mile-password=${{ secrets.MILE_PASSWORD }}
-
-            az containerapp update \
-              --name ${{ env.CONTAINER_APP_NAME }} \
-              --resource-group ${{ env.RESOURCE_GROUP }} \
-              --set-env-vars \
-                MICROSOFT_APP_ID=secretref:microsoft-app-id \
-                MICROSOFT_APP_PASSWORD=secretref:microsoft-app-password \
-                MICROSOFT_APP_TENANT_ID=secretref:microsoft-app-tenant-id \
-                MILE_USERNAME=secretref:mile-username \
-                MILE_PASSWORD=secretref:mile-password \
-                NODE_ENV=production \
-                PORT=3978
