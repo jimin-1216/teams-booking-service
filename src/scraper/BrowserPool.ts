@@ -28,7 +28,6 @@ export class BrowserPool {
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
         '--disable-gpu',
-        '--single-process',
       ],
     });
     this.taskCount = 0;
@@ -52,7 +51,14 @@ export class BrowserPool {
   }
 
   async getPage(): Promise<Page> {
-    const browser = await this.getBrowser();
+    let browser = await this.getBrowser();
+
+    // 브라우저 크래시 복구
+    if (!browser.isConnected()) {
+      logger.warn('브라우저 연결 끊김, 재시작');
+      this.browser = null;
+      browser = await this.getBrowser();
+    }
 
     // 매 작업마다 새 컨텍스트 → 이전 세션/다이얼로그 잔여물 없이 깨끗하게 시작
     const context = await browser.newContext({
