@@ -58,6 +58,7 @@ export class SiteAuthenticator {
       });
       await page.waitForLoadState('networkidle', { timeout: 10_000 });
       logger.info('로그인 성공');
+      await this.captureScreenshot(page, 'debug-after-login');
 
       // 워크스페이스 선택
       await this.selectWorkspace(page);
@@ -97,6 +98,7 @@ export class SiteAuthenticator {
 
     const afterUrl = page.url();
     logger.info('워크스페이스 진입', { url: afterUrl });
+    await this.captureScreenshot(page, 'debug-after-workspace');
   }
 
   /**
@@ -124,7 +126,15 @@ export class SiteAuthenticator {
     }
 
     // 회의실 위치 필터가 보일 때까지 대기
-    await page.waitForSelector("input[placeholder='회의실 위치']", { timeout: 10_000 });
+    await this.captureScreenshot(page, 'debug-before-filter-wait');
+    try {
+      await page.waitForSelector("input[placeholder='회의실 위치']", { timeout: 10_000 });
+      await this.captureScreenshot(page, 'debug-filter-found');
+    } catch (error) {
+      await this.captureScreenshot(page, 'debug-filter-not-found');
+      logger.error('필터 대기 실패', { url: page.url(), error: (error as Error).message });
+      throw error;
+    }
   }
 
   async ensureAuthenticated(page: Page): Promise<void> {

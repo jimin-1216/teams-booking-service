@@ -1,4 +1,6 @@
 import express from 'express';
+import fs from 'fs';
+import path from 'path';
 import {
   CloudAdapter,
   ConfigurationBotFrameworkAuthentication,
@@ -54,6 +56,25 @@ async function main() {
   // Health check
   app.get('/health', (_req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  });
+
+  // 디버그 스크린샷 목록
+  app.get('/debug/screenshots', (_req, res) => {
+    const dir = config.logs.screenshotDir;
+    if (!fs.existsSync(dir)) return res.json([]);
+    const files = fs.readdirSync(dir)
+      .filter(f => f.endsWith('.png'))
+      .sort()
+      .reverse()
+      .slice(0, 20);
+    res.json(files.map(f => ({ name: f, url: `/debug/screenshots/${f}` })));
+  });
+
+  // 디버그 스크린샷 이미지
+  app.get('/debug/screenshots/:filename', (req, res) => {
+    const filepath = path.join(config.logs.screenshotDir, req.params.filename);
+    if (!fs.existsSync(filepath)) return res.status(404).send('Not found');
+    res.sendFile(filepath);
   });
 
   // 6. 서버 시작
