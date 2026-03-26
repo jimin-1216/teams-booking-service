@@ -75,7 +75,12 @@ export async function navigateToDate(page: Page, dateStr: string): Promise<void>
   if (!btn) return;
 
   for (let i = 0; i < Math.abs(diffDays); i++) {
-    await page.mouse.click(btn.x + btn.w / 2, btn.y + btn.h / 2);
+    // evaluate로 직접 클릭 (오버레이 우회)
+    await page.evaluate(({ bx, by, bw, bh }) => {
+      const doc = (globalThis as any).document;
+      const el = doc.elementFromPoint(bx + bw / 2, by + bh / 2) as any;
+      if (el) el.click();
+    }, { bx: btn.x, by: btn.y, bw: btn.w, bh: btn.h });
     await page.waitForTimeout(CLICK_DELAY);
   }
 

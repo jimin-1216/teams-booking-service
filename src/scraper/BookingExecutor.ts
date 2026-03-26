@@ -141,24 +141,23 @@ export class BookingExecutor {
     building: string,
     floor: number,
   ): Promise<void> {
-    // 폼 내 회의실 input (슬라이드 패널 영역의 input 중 ROOM_INPUT_INDEX번째)
-    const roomInput = await page.evaluate(({ panelXMin, inputIdx }) => {
+    // 폼 내 회의실 input 클릭 (evaluate로 오버레이 우회)
+    const roomInputClicked = await page.evaluate(({ panelXMin, inputIdx, fallbackSel }) => {
       const doc = (globalThis as any).document;
       const inputs = Array.from(doc.querySelectorAll('input.input')) as any[];
       const formInputs = inputs.filter((el: any) => el.getBoundingClientRect().x > panelXMin);
-      return formInputs.length > inputIdx ? formInputs[inputIdx].getBoundingClientRect() : null;
-    }, { panelXMin: FORM_PANEL_X_MIN, inputIdx: ROOM_INPUT_INDEX });
-
-    if (roomInput) {
-      await page.mouse.click(roomInput.x + roomInput.width / 2, roomInput.y + roomInput.height / 2);
-      await page.waitForTimeout(1000);
-    } else {
+      if (formInputs.length > inputIdx) {
+        formInputs[inputIdx].click();
+        formInputs[inputIdx].focus();
+        return true;
+      }
       // fallback: selector 기반
-      const roomSearch = await page.$(selectors.bookingForm.roomSearchInput);
-      if (!roomSearch) throw new Error('회의실 검색 필드를 찾을 수 없습니다.');
-      await roomSearch.click();
-      await page.waitForTimeout(1000);
-    }
+      const fallback = doc.querySelector(fallbackSel) as any;
+      if (fallback) { fallback.click(); fallback.focus(); return true; }
+      return false;
+    }, { panelXMin: FORM_PANEL_X_MIN, inputIdx: ROOM_INPUT_INDEX, fallbackSel: selectors.bookingForm.roomSearchInput });
+    if (!roomInputClicked) throw new Error('회의실 검색 필드를 찾을 수 없습니다.');
+    await page.waitForTimeout(1000);
 
     // 드롭다운 항목(div.css-4d7k9p)에서 회의실명+건물+층으로 매칭
     const targetText = `${building} - ${floor}층`;

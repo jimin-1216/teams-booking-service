@@ -60,7 +60,7 @@ export class RoomScraper {
         }
 
         // 필터 리셋 (다른곳 클릭)
-        await page.click('body', { position: { x: 100, y: 500 } });
+        await page.evaluate(() => { (globalThis as any).document.body.click(); });
 
         const available = allRooms.filter((r) => r.available);
 
@@ -107,7 +107,7 @@ export class RoomScraper {
           allRooms.push(...rooms);
         }
 
-        await page.click('body', { position: { x: 100, y: 500 } });
+        await page.evaluate(() => { (globalThis as any).document.body.click(); });
 
         logger.info('전체 회의실 목록 조회', { count: allRooms.length });
         return allRooms;
