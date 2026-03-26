@@ -138,15 +138,9 @@ export class SiteAuthenticator {
   }
 
   async ensureAuthenticated(page: Page): Promise<void> {
-    if (!this.authenticated) {
-      await this.login(page);
-      return;
-    }
-
-    // 세션 만료 체크 - 로그인 페이지로 리다이렉트되었는지 확인
+    // 새 컨텍스트마다 로그인 필요 — URL로 판단
     const currentUrl = page.url();
-    if (currentUrl.includes('/login')) {
-      logger.info('세션 만료 감지, 재로그인');
+    if (currentUrl === 'about:blank' || currentUrl.includes('/login') || !this.authenticated) {
       this.authenticated = false;
       await this.login(page);
     }

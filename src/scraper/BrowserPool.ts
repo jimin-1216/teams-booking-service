@@ -52,7 +52,16 @@ export class BrowserPool {
   }
 
   async getPage(): Promise<Page> {
-    const context = await this.getContext();
+    const browser = await this.getBrowser();
+
+    // 매 작업마다 새 컨텍스트 → 이전 세션/다이얼로그 잔여물 없이 깨끗하게 시작
+    const context = await browser.newContext({
+      userAgent:
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      viewport: { width: 1280, height: 720 },
+      locale: 'ko-KR',
+      timezoneId: 'Asia/Seoul',
+    });
     const page = await context.newPage();
 
     page.setDefaultTimeout(config.scraper.timeout);

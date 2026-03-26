@@ -119,7 +119,7 @@ export class BookingExecutor {
           errorMessage: (error as Error).message,
         };
       } finally {
-        await page.close();
+        await page.context().close();
       }
     }, `예약 실행 (${params.date} ${params.startTime}-${params.endTime} ${params.userName})`);
   }
@@ -277,7 +277,7 @@ export class BookingExecutor {
           errorMessage: (error as Error).message,
         };
       } finally {
-        await page.close();
+        await page.context().close();
       }
     }, `예약 취소 (${externalBookingId})`);
   }

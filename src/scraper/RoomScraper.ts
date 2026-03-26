@@ -84,7 +84,7 @@ export class RoomScraper {
         });
         throw error;
       } finally {
-        await page.close();
+        await page.context().close();
       }
     }, `회의실 조회 (${params.date} ${params.startTime}-${params.endTime})`);
   }
@@ -115,7 +115,7 @@ export class RoomScraper {
         logger.error('전체 회의실 목록 조회 실패', { error: (error as Error).message });
         throw error;
       } finally {
-        await page.close();
+        await page.context().close();
       }
     }, '전체 회의실 목록 조회');
   }
