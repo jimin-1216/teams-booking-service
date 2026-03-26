@@ -154,31 +154,61 @@ export class RoomScraper {
     await page.waitForTimeout(800);
     logger.info('건물 선택 완료', { building });
 
-    // 층 선택 (evaluate로 직접 DOM 클릭)
+    // 층 선택 전 디버그: 현재 보이는 층 관련 요소 수집
+    const floorDebug = await page.evaluate(() => {
+      const doc = (globalThis as any).document;
+      const allEls = Array.from(doc.querySelectorAll('div, span, p, li')) as any[];
+      const floorEls: string[] = [];
+      for (const el of allEls) {
+        const text = el.textContent?.trim();
+        if (text && /^\d+층$/.test(text)) {
+          const rect = el.getBoundingClientRect();
+          floorEls.push(`"${text}" tag=${el.tagName} class="${el.className}" visible=${el.offsetParent !== null} rect=${JSON.stringify({x:Math.round(rect.x),y:Math.round(rect.y),w:Math.round(rect.width),h:Math.round(rect.height)})}`);
+        }
+      }
+      // css-y4bpjy 아이템도 확인 (건물 선택 후 변경된 내용)
+      const dropdownItems = Array.from(doc.querySelectorAll('div.css-y4bpjy')) as any[];
+      const itemTexts = dropdownItems.map((el: any) => el.textContent?.trim()).filter(Boolean);
+      return { floorEls, dropdownItems: itemTexts };
+    });
+    logger.info('DEBUG: 층 선택 전 DOM 상태', floorDebug);
+
+    // 층 선택 (evaluate로 직접 DOM 클릭 — offsetParent 체크 제거)
     const floorClicked = await page.evaluate((f: number) => {
       const doc = (globalThis as any).document;
+      // 1차: css-y4bpjy 드롭다운 항목에서 찾기 (건물과 같은 드롭다운 구조)
+      const dropdownItems = Array.from(doc.querySelectorAll('div.css-y4bpjy')) as any[];
+      for (const item of dropdownItems) {
+        const text = item.textContent?.trim();
+        if (text === `${f}층` || text?.match(new RegExp(`^${f}층$`))) {
+          item.click();
+          return 'dropdown';
+        }
+      }
+      // 2차: 정확한 텍스트 매칭 (offsetParent 무시)
       const allEls = Array.from(doc.querySelectorAll('div, span, p, li')) as any[];
       for (const el of allEls) {
         const text = el.textContent?.trim();
-        if (text === `${f}층` && el.offsetParent !== null) {
+        if (text === `${f}층`) {
           el.click();
-          return true;
+          return 'exact';
         }
       }
-      // 폴백: 부분 매칭
+      // 3차: 부분 매칭
       for (const el of allEls) {
         const text = el.textContent?.trim();
-        if (text?.includes(`${f}층`) && text.length < 10 && el.offsetParent !== null) {
+        if (text?.includes(`${f}층`) && text.length < 10) {
           el.click();
-          return true;
+          return 'partial';
         }
       }
-      return false;
+      return null;
     }, floor);
     if (!floorClicked) {
       logger.error('층 선택 실패', { floor });
       throw new Error(`${floor}층을 찾을 수 없습니다.`);
     }
+    logger.info('층 선택 완료', { floor, method: floorClicked });
     await page.waitForTimeout(1500);
     logger.info('층 선택 완료', { floor });
   }
