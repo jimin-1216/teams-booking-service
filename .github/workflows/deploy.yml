@@ -56,6 +56,8 @@ jobs:
               --registry-password ${{ secrets.GITHUB_TOKEN }} \
               --target-port 3978 \
               --ingress external \
+              --cpu 1.0 \
+              --memory 2.0Gi \
               --env-vars \
                 MICROSOFT_APP_ID=${{ secrets.MICROSOFT_APP_ID }} \
                 MICROSOFT_APP_PASSWORD=${{ secrets.MICROSOFT_APP_PASSWORD }} \
@@ -69,6 +71,8 @@ jobs:
               --name ${{ env.CONTAINER_APP_NAME }} \
               --resource-group ${{ env.RESOURCE_GROUP }} \
               --image ${{ env.IMAGE_NAME }} \
+              --cpu 1.0 \
+              --memory 2.0Gi \
               --set-env-vars \
                 MICROSOFT_APP_ID=${{ secrets.MICROSOFT_APP_ID }} \
                 MICROSOFT_APP_PASSWORD=${{ secrets.MICROSOFT_APP_PASSWORD }} \

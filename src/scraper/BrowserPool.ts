@@ -28,6 +28,11 @@ export class BrowserPool {
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
         '--disable-gpu',
+        '--disable-extensions',
+        '--disable-translate',
+        '--disable-sync',
+        '--disable-background-networking',
+        '--js-flags=--max-old-space-size=256',
       ],
     });
     this.taskCount = 0;
