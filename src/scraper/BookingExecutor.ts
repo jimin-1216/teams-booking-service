@@ -57,13 +57,16 @@ export class BookingExecutor {
         // 1. 날짜 이동 (폼 열기 전에 — 폼이 해당 날짜를 자동 세팅)
         await navigateToDate(page, params.date);
 
-        // 2. "예약하기" 버튼 클릭하여 예약 폼 열기
-        const newBookingBtn = await page.waitForSelector(
-          'button.button-solid-primary:has-text("예약하기")',
-          { timeout: 10_000 },
-        );
-        if (!newBookingBtn) throw new Error('예약하기 버튼을 찾을 수 없습니다.');
-        await newBookingBtn.click();
+        // 2. "예약하기" 버튼 클릭하여 예약 폼 열기 (evaluate로 오버레이 우회)
+        await page.waitForSelector('button.button-solid-primary', { timeout: 10_000 });
+        const bookBtnClicked = await page.evaluate(() => {
+          const doc = (globalThis as any).document;
+          const btns = Array.from(doc.querySelectorAll('button.button-solid-primary')) as any[];
+          const btn = btns.find((b: any) => b.textContent?.includes('예약하기'));
+          if (btn) { btn.click(); return true; }
+          return false;
+        });
+        if (!bookBtnClicked) throw new Error('예약하기 버튼을 찾을 수 없습니다.');
         await page.waitForTimeout(1500);
 
         // 3. 회의실 선택 (시간보다 먼저 — React controlled input은 변경 불가)
@@ -78,16 +81,20 @@ export class BookingExecutor {
           await memoInput.fill(memoText);
         }
 
-        // 5. 제출 버튼 활성화 대기 및 클릭
+        // 5. 제출 버튼 활성화 대기 및 클릭 (evaluate로 오버레이 우회)
         await page.waitForTimeout(500);
-        const submitBtn = await page.waitForSelector(
-          'button.button-solid-primary:has-text("예약하기"):not(.button-solid-disabled)',
-          { timeout: 5_000 },
-        );
-        if (!submitBtn) {
+        const submitClicked = await page.evaluate(() => {
+          const doc = (globalThis as any).document;
+          const btns = Array.from(doc.querySelectorAll('button.button-solid-primary')) as any[];
+          const btn = btns.find((b: any) =>
+            b.textContent?.includes('예약하기') && !b.classList.contains('button-solid-disabled'),
+          );
+          if (btn) { btn.click(); return true; }
+          return false;
+        });
+        if (!submitClicked) {
           throw new Error('예약하기 버튼이 활성화되지 않았습니다. 필수 항목을 확인하세요.');
         }
-        await submitBtn.click();
 
         // 6. 예약 완료 대기
         await page.waitForLoadState('networkidle', { timeout: 10_000 });

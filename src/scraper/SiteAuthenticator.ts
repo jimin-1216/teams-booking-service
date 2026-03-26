@@ -24,7 +24,6 @@ export class SiteAuthenticator {
       logger.info('센터 예약 사이트 로그인 시작');
 
       await page.goto(config.mile.loginUrl, { waitUntil: 'networkidle' });
-      // React SPA 렌더링 대기
       await page.waitForTimeout(2000);
 
       // 아이디 입력
@@ -41,24 +40,24 @@ export class SiteAuthenticator {
       if (!passwordInput) throw new Error('비밀번호 입력 필드를 찾을 수 없습니다.');
       await passwordInput.fill(config.mile.password);
 
-      // 입력 후 React 상태 반영 대기 (버튼 disabled → enabled)
       await page.waitForTimeout(500);
 
-      // 로그인 버튼 클릭 (disabled 해제될 때까지 대기)
-      const submitBtn = await page.waitForSelector(
-        `${selectors.login.submitButton}:not(.button-solid-disabled)`,
-        { timeout: 5_000 },
-      );
-      if (!submitBtn) throw new Error('로그인 버튼이 활성화되지 않았습니다.');
-      await submitBtn.click();
+      // 로그인 버튼 클릭 (evaluate로 오버레이 우회)
+      const loginClicked = await page.evaluate((sel) => {
+        const doc = (globalThis as any).document;
+        const btns = Array.from(doc.querySelectorAll(sel)) as any[];
+        const activeBtn = btns.find((b: any) => !b.classList.contains('button-solid-disabled'));
+        if (activeBtn) { activeBtn.click(); return true; }
+        return false;
+      }, selectors.login.submitButton);
+      if (!loginClicked) throw new Error('로그인 버튼이 활성화되지 않았습니다.');
 
-      // 로그인 성공 확인: /workspace/list로 이동하면 성공
+      // 로그인 성공 확인
       await page.waitForURL(`**${selectors.login.loginSuccessUrl}*`, {
         timeout: 10_000,
       });
       await page.waitForLoadState('networkidle', { timeout: 10_000 });
       logger.info('로그인 성공');
-      await this.captureScreenshot(page, 'debug-after-login');
 
       // 워크스페이스 선택
       await this.selectWorkspace(page);
@@ -77,7 +76,7 @@ export class SiteAuthenticator {
   }
 
   /**
-   * 워크스페이스 선택 (/workspace/list → /meeting/예약 현황)
+   * 워크스페이스 선택 (evaluate로 직접 DOM 클릭)
    */
   private async selectWorkspace(page: Page): Promise<void> {
     const currentUrl = page.url();
@@ -86,19 +85,28 @@ export class SiteAuthenticator {
     logger.info('워크스페이스 선택 중...');
     const workspaceName = config.mile.workspaceName;
 
-    // 워크스페이스 항목 클릭
-    const wsItem = await page.locator(`:has-text("${workspaceName}")`).first();
-    if (!wsItem) {
+    await page.waitForTimeout(1000);
+
+    const wsClicked = await page.evaluate((name: string) => {
+      const doc = (globalThis as any).document;
+      const allEls = Array.from(doc.querySelectorAll('div, span, p, a, li')) as any[];
+      for (const el of allEls) {
+        if (el.textContent?.includes(name) && el.textContent.length < 100) {
+          el.click();
+          return true;
+        }
+      }
+      return false;
+    }, workspaceName);
+
+    if (!wsClicked) {
       throw new Error(`워크스페이스 "${workspaceName}"를 찾을 수 없습니다.`);
     }
 
-    await wsItem.click();
     await page.waitForLoadState('networkidle', { timeout: 15_000 });
     await page.waitForTimeout(2000);
 
-    const afterUrl = page.url();
-    logger.info('워크스페이스 진입', { url: afterUrl });
-    await this.captureScreenshot(page, 'debug-after-workspace');
+    logger.info('워크스페이스 진입', { url: page.url() });
   }
 
   /**
@@ -110,10 +118,23 @@ export class SiteAuthenticator {
     const currentUrl = page.url();
     if (currentUrl.includes('/meeting/')) return;
 
-    // 예약 현황 사이드바 메뉴 클릭
-    const bookingNav = await page.$(`p:has-text("예약 현황")`);
-    if (bookingNav) {
-      await bookingNav.click();
+    // 다이얼로그/오버레이 먼저 닫기
+    await this.dismissOverlays(page);
+
+    // 예약 현황 사이드바 메뉴 클릭 (evaluate로 오버레이 우회)
+    const navClicked = await page.evaluate(() => {
+      const doc = (globalThis as any).document;
+      const els = Array.from(doc.querySelectorAll('p, span, a')) as any[];
+      for (const el of els) {
+        if (el.textContent?.trim() === '예약 현황') {
+          el.click();
+          return true;
+        }
+      }
+      return false;
+    });
+
+    if (navClicked) {
       await page.waitForLoadState('networkidle', { timeout: 10_000 });
       await page.waitForTimeout(2000);
     }
@@ -125,11 +146,12 @@ export class SiteAuthenticator {
       await page.waitForTimeout(2000);
     }
 
+    // 다이얼로그 한번 더 닫기
+    await this.dismissOverlays(page);
+
     // 회의실 위치 필터가 보일 때까지 대기
-    await this.captureScreenshot(page, 'debug-before-filter-wait');
     try {
       await page.waitForSelector("input[placeholder='회의실 위치']", { timeout: 10_000 });
-      await this.captureScreenshot(page, 'debug-filter-found');
     } catch (error) {
       await this.captureScreenshot(page, 'debug-filter-not-found');
       logger.error('필터 대기 실패', { url: page.url(), error: (error as Error).message });
@@ -137,8 +159,37 @@ export class SiteAuthenticator {
     }
   }
 
+  /**
+   * 오버레이/다이얼로그 닫기 (evaluate로 직접 DOM 클릭)
+   */
+  private async dismissOverlays(page: Page): Promise<void> {
+    try {
+      const dismissed = await page.evaluate(() => {
+        const doc = (globalThis as any).document;
+        const buttons = Array.from(doc.querySelectorAll('button')) as any[];
+        for (const btn of buttons) {
+          const text = btn.textContent?.trim();
+          if (text === '확인' || text === '닫기' || text === '취소') {
+            // 다이얼로그 내부 버튼인지 확인 (모달/다이얼로그 컨테이너 내)
+            const dialog = btn.closest('[role="dialog"], .modal, [class*="modal"], [class*="dialog"], [class*="overlay"]');
+            if (dialog) {
+              btn.click();
+              return text;
+            }
+          }
+        }
+        return null;
+      });
+      if (dismissed) {
+        logger.info('오버레이 닫음', { button: dismissed });
+        await page.waitForTimeout(500);
+      }
+    } catch {
+      // 무시
+    }
+  }
+
   async ensureAuthenticated(page: Page): Promise<void> {
-    // 새 컨텍스트마다 로그인 필요 — URL로 판단
     const currentUrl = page.url();
     if (currentUrl === 'about:blank' || currentUrl.includes('/login') || !this.authenticated) {
       this.authenticated = false;
