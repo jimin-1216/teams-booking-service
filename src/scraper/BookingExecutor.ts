@@ -57,57 +57,102 @@ export class BookingExecutor {
         // 1. 날짜 이동 (폼 열기 전에 — 폼이 해당 날짜를 자동 세팅)
         await navigateToDate(page, params.date);
 
-        // 2. "예약하기" 버튼 클릭하여 예약 폼 열기 (evaluate로 오버레이 우회)
+        // 2. "예약하기" 버튼 클릭하여 예약 폼 열기
+        //    주의: 페이지에 "예약하기" 버튼이 2개 — 상단(폼 열기)과 폼 내(제출)
+        //    폼이 안 열린 상태에서는 슬라이드 패널(x > 830)에 버튼이 없음
         await page.waitForSelector('button.button-solid-primary', { timeout: 10_000 });
-        const bookBtnClicked = await page.evaluate(() => {
+        const openFormClicked = await page.evaluate((panelX: number) => {
           const doc = (globalThis as any).document;
           const btns = Array.from(doc.querySelectorAll('button.button-solid-primary')) as any[];
-          const btn = btns.find((b: any) => b.textContent?.includes('예약하기'));
+          // 폼 열기 버튼: 슬라이드 패널 밖(x < panelX)에 있는 "예약하기"
+          const btn = btns.find((b: any) => {
+            const rect = b.getBoundingClientRect();
+            return b.textContent?.includes('예약하기') && rect.x < panelX;
+          });
           if (btn) { btn.click(); return true; }
           return false;
-        });
-        if (!bookBtnClicked) throw new Error('예약하기 버튼을 찾을 수 없습니다.');
-        await page.waitForTimeout(1500);
+        }, FORM_PANEL_X_MIN);
+        if (!openFormClicked) throw new Error('예약하기 버튼을 찾을 수 없습니다.');
+        await page.waitForTimeout(2000);
+        await siteAuth.captureScreenshot(page, 'debug-after-form-open');
 
-        // 3. 회의실 선택 (시간보다 먼저 — React controlled input은 변경 불가)
+        // 3. 회의실 선택
         await this.selectRoom(page, params.roomName, params.roomBuilding, params.roomFloor);
+        await siteAuth.captureScreenshot(page, 'debug-after-room-select');
 
-        // 4. 메모 입력 (예약자 + 사유)
-        const memoInput = await page.$(selectors.bookingForm.memoTextarea);
-        if (memoInput) {
-          const memoText = params.memo
-            ? `[${params.userName}] ${params.memo}`
-            : `예약자: ${params.userName}`;
-          await memoInput.fill(memoText);
-        }
+        // 4. 메모 입력 (evaluate로 직접 value 설정)
+        const memoText = params.memo
+          ? `[${params.userName}] ${params.memo}`
+          : `예약자: ${params.userName}`;
+        await page.evaluate(({ sel, text }) => {
+          const doc = (globalThis as any).document;
+          const textarea = doc.querySelector(sel) as any;
+          if (textarea) {
+            const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+              (globalThis as any).HTMLTextAreaElement.prototype, 'value',
+            )?.set;
+            if (nativeInputValueSetter) {
+              nativeInputValueSetter.call(textarea, text);
+            } else {
+              textarea.value = text;
+            }
+            textarea.dispatchEvent(new Event('input', { bubbles: true }));
+            textarea.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+        }, { sel: selectors.bookingForm.memoTextarea, text: memoText });
 
-        // 5. 제출 버튼 활성화 대기 및 클릭 (evaluate로 오버레이 우회)
+        // 5. 제출 버튼 클릭 — 슬라이드 패널 내(x > panelX)의 "예약하기"
         await page.waitForTimeout(500);
-        const submitClicked = await page.evaluate(() => {
+        await siteAuth.captureScreenshot(page, 'debug-before-submit');
+        const submitClicked = await page.evaluate((panelX: number) => {
           const doc = (globalThis as any).document;
           const btns = Array.from(doc.querySelectorAll('button.button-solid-primary')) as any[];
-          const btn = btns.find((b: any) =>
+          const btn = btns.find((b: any) => {
+            const rect = b.getBoundingClientRect();
+            return b.textContent?.includes('예약하기')
+              && !b.classList.contains('button-solid-disabled')
+              && rect.x > panelX;
+          });
+          if (btn) { btn.click(); return true; }
+          // 폴백: disabled가 아닌 아무 "예약하기" 버튼
+          const fallback = btns.find((b: any) =>
             b.textContent?.includes('예약하기') && !b.classList.contains('button-solid-disabled'),
           );
-          if (btn) { btn.click(); return true; }
+          if (fallback) { fallback.click(); return true; }
           return false;
-        });
+        }, FORM_PANEL_X_MIN);
         if (!submitClicked) {
-          throw new Error('예약하기 버튼이 활성화되지 않았습니다. 필수 항목을 확인하세요.');
+          throw new Error('예약하기 제출 버튼이 활성화되지 않았습니다.');
         }
 
-        // 6. 예약 완료 대기
+        // 6. 예약 완료 대기 + 결과 검증
         await page.waitForLoadState('networkidle', { timeout: 10_000 });
         await page.waitForTimeout(2000);
+        await siteAuth.captureScreenshot(page, 'debug-after-submit');
 
-        // 예약 ID 생성 (사이트에서 별도 ID를 반환하지 않으므로 조합)
+        // 에러 메시지 확인 (사이트가 에러 토스트/다이얼로그를 띄울 수 있음)
+        const pageError = await page.evaluate(() => {
+          const doc = (globalThis as any).document;
+          // 에러 토스트/알림 확인
+          const toasts = Array.from(doc.querySelectorAll('[class*="toast"], [class*="alert"], [class*="error"], [role="alert"]')) as any[];
+          for (const t of toasts) {
+            const text = t.textContent?.trim();
+            if (text && text.length > 0 && text.length < 200) return text;
+          }
+          return null;
+        });
+        if (pageError) {
+          logger.warn('예약 후 페이지 메시지 감지', { message: pageError });
+        }
+
         const externalBookingId = `mile_${params.date}_${params.startTime}_${params.roomName}`;
 
-        logger.info('예약 실행 성공', {
+        logger.info('예약 실행 완료', {
           duration_ms: Date.now() - start,
           room: `${params.roomName} (${params.roomBuilding} ${params.roomFloor}층)`,
           userName: params.userName,
           externalBookingId,
+          pageError,
         });
 
         return {
