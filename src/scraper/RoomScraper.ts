@@ -46,7 +46,9 @@ export class RoomScraper {
 
       try {
         await siteAuth.navigateToBookingPage(page);
+        logger.info('DEBUG: 예약 현황 페이지 도달', { url: page.url() });
         await navigateToDate(page, params.date);
+        logger.info('DEBUG: 날짜 이동 완료', { url: page.url() });
 
         const floors = params.floor ? [params.floor] : BOOKABLE_FLOORS;
         const allRooms: RoomInfo[] = [];
@@ -71,6 +73,10 @@ export class RoomScraper {
 
         return available;
       } catch (error) {
+        try {
+          const buf = await page.screenshot({ type: 'png' });
+          logger.error('DEBUG: 실패 시 스크린샷 (base64)', { screenshot: buf.toString('base64').slice(0, 500) + '...', url: page.url() });
+        } catch { /* ignore */ }
         await siteAuth.captureScreenshot(page, 'search-failure');
         logger.error('회의실 조회 실패', {
           duration_ms: Date.now() - start,
@@ -138,17 +144,43 @@ export class RoomScraper {
     try {
       await page.locator(`div.css-y4bpjy:has-text("${building}")`).click({ timeout: 5000 });
     } catch (error) {
-      await siteAuth.captureScreenshot(page, 'debug-building-click-failed');
+      const pageContent = await page.content();
+      const dialogText = await page.evaluate(() => {
+        const doc = (globalThis as any).document;
+        const els = Array.from(doc.querySelectorAll('[role="dialog"], .modal, [class*="modal"], [class*="overlay"], [class*="popup"]')) as any[];
+        return els.map((el: any) => ({ tag: el.tagName, class: el.className, text: el.innerText?.slice(0, 200) }));
+      });
+      logger.error('DEBUG: 건물 클릭 실패', {
+        dialogElements: dialogText,
+        hasOverlay: pageContent.includes('예약하기'),
+        url: page.url(),
+      });
       // 다이얼로그 다시 시도
       await this.dismissConfirmDialog(page);
       // force: true로 재시도
       await page.locator(`div.css-y4bpjy:has-text("${building}")`).click({ force: true, timeout: 5000 });
     }
     await page.waitForTimeout(500);
+    logger.info('DEBUG: 건물 선택 완료', { building });
 
     // 층 선택 (드롭다운 오른쪽)
-    await page.locator(`text=${floor}층`).first().click();
+    const floorLocator = page.locator(`text=${floor}층`).first();
+    const floorVisible = await floorLocator.isVisible({ timeout: 3000 }).catch(() => false);
+    logger.info('DEBUG: 층 선택 시도', { floor, visible: floorVisible });
+    if (!floorVisible) {
+      // 드롭다운이 안 열렸을 수 있으니 다시 시도
+      const allTexts = await page.evaluate(() => {
+        const doc = (globalThis as any).document;
+        return (Array.from(doc.querySelectorAll('div, span, p')) as any[])
+          .filter((el: any) => el.innerText?.includes('층'))
+          .slice(0, 10)
+          .map((el: any) => ({ tag: el.tagName, class: el.className, text: el.innerText?.slice(0, 50) }));
+      });
+      logger.error('DEBUG: 층 요소 못 찾음', { floor, floorElements: allTexts });
+    }
+    await floorLocator.click({ force: true, timeout: 10000 });
     await page.waitForTimeout(1500);
+    logger.info('DEBUG: 층 선택 완료', { floor });
   }
 
   /**
