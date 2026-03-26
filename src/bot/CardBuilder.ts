@@ -105,10 +105,8 @@ export class CardBuilder {
                           {
                             type: 'Input.Text',
                             id: `memo_${room.id}`,
-                            label: '사유/용건',
-                            placeholder: '회의 목적을 입력하세요',
-                            isRequired: true,
-                            errorMessage: '사유를 입력해주세요',
+                            label: '사유/용건 (선택)',
+                            placeholder: '미입력 시 예약자 이름만 기록됩니다',
                           },
                         ],
                         actions: [

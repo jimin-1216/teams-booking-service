@@ -174,6 +174,18 @@ export class BookingBot extends TeamsActivityHandler {
       `${roomFloor}층 ${roomName} 예약 중입니다... (최대 15초 소요)`,
     );
 
+    // 0. room이 DB에 없으면 카드 데이터로 생성
+    if (!roomRepository.findById(roomId)) {
+      roomRepository.upsert({
+        id: roomId,
+        name: roomName,
+        building: data.roomBuilding || '',
+        floor: parseInt(roomFloor, 10) || 0,
+        capacity: null,
+        externalId: `${roomName}_${data.roomBuilding || ''}_${roomFloor}층`,
+      });
+    }
+
     // 1. DB에 pending 상태로 먼저 기록
     const booking = bookingRepository.createPending({
       roomId,
