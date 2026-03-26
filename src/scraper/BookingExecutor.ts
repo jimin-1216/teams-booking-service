@@ -81,22 +81,69 @@ export class BookingExecutor {
 
         const openFormClicked = await page.evaluate((panelX: number) => {
           const doc = (globalThis as any).document;
-          // 1차: button.button-solid-primary 중 "예약하기"
+          const isVisible = (el: any) => {
+            const r = el.getBoundingClientRect();
+            return r.width > 0 && r.height > 0;
+          };
+          // 1차: button.button-solid-primary 중 "예약하기" (visible, not disabled)
+          //   폼 열기 버튼은 상단 바(y < 150)에 있고, 제출 버튼은 폼 패널 내(y > 400)
           const primaryBtns = Array.from(doc.querySelectorAll('button.button-solid-primary')) as any[];
           const btn = primaryBtns.find((b: any) => {
             const rect = b.getBoundingClientRect();
-            return b.textContent?.includes('예약하기') && rect.x < panelX;
+            return b.textContent?.includes('예약하기')
+              && !b.classList.contains('button-solid-disabled')
+              && isVisible(b)
+              && rect.y < 150;
           });
           if (btn) { btn.click(); return 'primary'; }
-          // 2차: 아무 "예약하기" 텍스트 버튼
+          // 2차: visible "예약하기" 버튼 (disabled 제외)
           const allBtns = Array.from(doc.querySelectorAll('button')) as any[];
-          const fallback = allBtns.find((b: any) => b.textContent?.trim() === '예약하기');
+          const fallback = allBtns.find((b: any) =>
+            b.textContent?.trim() === '예약하기'
+            && !b.classList.contains('button-solid-disabled')
+            && isVisible(b),
+          );
           if (fallback) { fallback.click(); return 'fallback'; }
           return null;
         }, FORM_PANEL_X_MIN);
         if (!openFormClicked) throw new Error('예약하기 버튼을 찾을 수 없습니다.');
         logger.info('예약하기 폼 열기', { method: openFormClicked });
         await page.waitForTimeout(2000);
+
+        // 폼 열림 검증: 폼 패널 내 input 수 확인
+        const formState = await page.evaluate((panelXMin: number) => {
+          const doc = (globalThis as any).document;
+          const inputs = Array.from(doc.querySelectorAll('input.input')) as any[];
+          const formInputs = inputs.filter((el: any) => el.getBoundingClientRect().x > panelXMin);
+          return {
+            totalInputs: inputs.length,
+            formInputs: formInputs.length,
+            formInputValues: formInputs.map((el: any) => ({
+              placeholder: el.placeholder,
+              value: el.value,
+              x: Math.round(el.getBoundingClientRect().x),
+            })),
+          };
+        }, FORM_PANEL_X_MIN);
+        logger.info('DEBUG: 폼 상태', formState);
+
+        if (formState.formInputs < 3) {
+          // 폼이 안 열렸으면 재시도
+          logger.warn('폼이 열리지 않음, 재시도');
+          await page.evaluate(() => {
+            const doc = (globalThis as any).document;
+            const btns = Array.from(doc.querySelectorAll('button')) as any[];
+            const btn = btns.find((b: any) => {
+              const r = b.getBoundingClientRect();
+              return b.textContent?.includes('예약하기')
+                && !b.classList.contains('button-solid-disabled')
+                && r.width > 0 && r.y < 150;
+            });
+            if (btn) btn.click();
+          });
+          await page.waitForTimeout(2000);
+        }
+
         await siteAuth.captureScreenshot(page, 'debug-after-form-open');
 
         // 3. 회의실 선택
@@ -124,28 +171,62 @@ export class BookingExecutor {
           }
         }, { sel: selectors.bookingForm.memoTextarea, text: memoText });
 
-        // 5. 제출 버튼 클릭 — 슬라이드 패널 내(x > panelX)의 "예약하기"
+        // 5. 제출 버튼 클릭 — 폼 패널 내(y > 400)의 "예약하기"
+        //    회의실 선택 후 제출 버튼 활성화 대기 (최대 5초)
         await page.waitForTimeout(500);
-        await siteAuth.captureScreenshot(page, 'debug-before-submit');
-        const submitClicked = await page.evaluate((panelX: number) => {
+
+        // 제출 버튼 활성화 대기
+        let submitReady = false;
+        for (let i = 0; i < 10; i++) {
+          submitReady = await page.evaluate(() => {
+            const doc = (globalThis as any).document;
+            const btns = Array.from(doc.querySelectorAll('button.button-solid-primary')) as any[];
+            return btns.some((b: any) => {
+              const rect = b.getBoundingClientRect();
+              return b.textContent?.includes('예약하기')
+                && !b.classList.contains('button-solid-disabled')
+                && rect.y > 400 && rect.width > 0;
+            });
+          });
+          if (submitReady) break;
+          await page.waitForTimeout(500);
+        }
+
+        // 디버그: 제출 전 폼 내 예약하기 버튼 상태
+        const submitBtnState = await page.evaluate(() => {
           const doc = (globalThis as any).document;
           const btns = Array.from(doc.querySelectorAll('button.button-solid-primary')) as any[];
+          return btns
+            .filter((b: any) => b.textContent?.includes('예약하기'))
+            .map((b: any) => {
+              const rect = b.getBoundingClientRect();
+              return {
+                text: b.textContent?.trim(),
+                disabled: b.classList.contains('button-solid-disabled'),
+                x: Math.round(rect.x), y: Math.round(rect.y),
+                w: Math.round(rect.width), h: Math.round(rect.height),
+                class: b.className?.substring(0, 80),
+              };
+            });
+        });
+        logger.info('DEBUG: 제출 버튼 상태', { buttons: submitBtnState, submitReady });
+
+        await siteAuth.captureScreenshot(page, 'debug-before-submit');
+        const submitClicked = await page.evaluate(() => {
+          const doc = (globalThis as any).document;
+          const btns = Array.from(doc.querySelectorAll('button.button-solid-primary')) as any[];
+          // 폼 패널 내(y > 400) 활성화된 "예약하기" 버튼만 클릭
           const btn = btns.find((b: any) => {
             const rect = b.getBoundingClientRect();
             return b.textContent?.includes('예약하기')
               && !b.classList.contains('button-solid-disabled')
-              && rect.x > panelX;
+              && rect.y > 400 && rect.width > 0;
           });
           if (btn) { btn.click(); return true; }
-          // 폴백: disabled가 아닌 아무 "예약하기" 버튼
-          const fallback = btns.find((b: any) =>
-            b.textContent?.includes('예약하기') && !b.classList.contains('button-solid-disabled'),
-          );
-          if (fallback) { fallback.click(); return true; }
           return false;
-        }, FORM_PANEL_X_MIN);
+        });
         if (!submitClicked) {
-          throw new Error('예약하기 제출 버튼이 활성화되지 않았습니다.');
+          throw new Error('예약하기 제출 버튼이 활성화되지 않았습니다. 회의실 선택 또는 시간 설정을 확인하세요.');
         }
 
         // 6. 예약 완료 대기 + 결과 검증
@@ -225,18 +306,32 @@ export class BookingExecutor {
       return false;
     }, { panelXMin: FORM_PANEL_X_MIN, inputIdx: ROOM_INPUT_INDEX, fallbackSel: selectors.bookingForm.roomSearchInput });
     if (!roomInputClicked) throw new Error('회의실 검색 필드를 찾을 수 없습니다.');
-    await page.waitForTimeout(1000);
+    await page.waitForTimeout(1500);
+
+    // 디버그: 드롭다운 항목 확인
+    const dropdownDebug = await page.evaluate(() => {
+      const doc = (globalThis as any).document;
+      const items = Array.from(doc.querySelectorAll('div.css-4d7k9p')) as any[];
+      return {
+        count: items.length,
+        items: items.slice(0, 10).map((el: any) => ({
+          text: el.textContent?.trim().substring(0, 50),
+          visible: el.getBoundingClientRect().width > 0,
+        })),
+      };
+    });
+    logger.info('DEBUG: 회의실 드롭다운', dropdownDebug);
 
     // 드롭다운 항목(div.css-4d7k9p)에서 회의실명+건물+층으로 매칭
     const targetText = `${building} - ${floor}층`;
-    const clicked = await page.evaluate(({ name, location }) => {
+    const clickResult = await page.evaluate(({ name, location }) => {
       const doc = (globalThis as any).document;
       const items = Array.from(doc.querySelectorAll('div.css-4d7k9p')) as any[];
       for (const item of items) {
         const text = item.textContent || '';
         if (text.includes(name) && text.includes(location)) {
           item.click();
-          return true;
+          return { matched: text.trim().substring(0, 50), method: 'name+location' };
         }
       }
       // fallback: 층만 매칭
@@ -244,17 +339,18 @@ export class BookingExecutor {
         const text = item.textContent || '';
         if (text.includes(location)) {
           item.click();
-          return true;
+          return { matched: text.trim().substring(0, 50), method: 'location-only' };
         }
       }
-      return false;
+      return null;
     }, { name: roomName, location: targetText });
 
-    if (!clicked) {
+    if (!clickResult) {
       throw new Error(`회의실을 찾을 수 없습니다: ${roomName} (${targetText})`);
     }
+    logger.info('회의실 선택 완료 (폼)', { ...clickResult, target: `${roomName} (${targetText})` });
 
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(1000);
   }
 
   /**
