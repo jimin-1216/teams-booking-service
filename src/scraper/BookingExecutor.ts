@@ -306,6 +306,10 @@ export class BookingExecutor {
       return false;
     }, { panelXMin: FORM_PANEL_X_MIN, inputIdx: ROOM_INPUT_INDEX, fallbackSel: selectors.bookingForm.roomSearchInput });
     if (!roomInputClicked) throw new Error('회의실 검색 필드를 찾을 수 없습니다.');
+    await page.waitForTimeout(500);
+
+    // 회의실 이름 타이핑하여 드롭다운 필터링 (E2E와 동일)
+    await page.keyboard.type(roomName, { delay: 50 });
     await page.waitForTimeout(1500);
 
     // 디버그: 드롭다운 항목 확인
