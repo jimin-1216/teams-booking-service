@@ -143,7 +143,7 @@ export class SiteAuthenticator {
     if (!page.url().includes('/meeting/')) {
       logger.warn('예약 현황 페이지 미도달, 직접 이동 시도');
       await page.goto(`${config.mile.baseUrl}/meeting/schedule`, { waitUntil: 'domcontentloaded' });
-      await page.waitForTimeout(2000);
+      await page.waitForTimeout(5000);
     }
 
     // 다이얼로그 한번 더 닫기

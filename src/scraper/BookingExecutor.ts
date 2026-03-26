@@ -58,21 +58,44 @@ export class BookingExecutor {
         await navigateToDate(page, params.date);
 
         // 2. "예약하기" 버튼 클릭하여 예약 폼 열기
-        //    주의: 페이지에 "예약하기" 버튼이 2개 — 상단(폼 열기)과 폼 내(제출)
-        //    폼이 안 열린 상태에서는 슬라이드 패널(x > 830)에 버튼이 없음
-        await page.waitForSelector('button.button-solid-primary', { timeout: 10_000 });
+        //    React 렌더링 대기 후 버튼 탐색
+        await page.waitForTimeout(3000);
+
+        // 디버그: 현재 페이지의 모든 버튼 상태 로깅
+        const btnDebug = await page.evaluate(() => {
+          const doc = (globalThis as any).document;
+          const btns = Array.from(doc.querySelectorAll('button')) as any[];
+          return btns
+            .filter((b: any) => b.textContent?.trim().length > 0 && b.textContent.trim().length < 30)
+            .map((b: any) => {
+              const rect = b.getBoundingClientRect();
+              return {
+                text: b.textContent?.trim(),
+                class: b.className?.substring(0, 60),
+                x: Math.round(rect.x), y: Math.round(rect.y),
+                w: Math.round(rect.width), h: Math.round(rect.height),
+              };
+            });
+        });
+        logger.info('DEBUG: 페이지 버튼 목록', { buttons: btnDebug, url: page.url() });
+
         const openFormClicked = await page.evaluate((panelX: number) => {
           const doc = (globalThis as any).document;
-          const btns = Array.from(doc.querySelectorAll('button.button-solid-primary')) as any[];
-          // 폼 열기 버튼: 슬라이드 패널 밖(x < panelX)에 있는 "예약하기"
-          const btn = btns.find((b: any) => {
+          // 1차: button.button-solid-primary 중 "예약하기"
+          const primaryBtns = Array.from(doc.querySelectorAll('button.button-solid-primary')) as any[];
+          const btn = primaryBtns.find((b: any) => {
             const rect = b.getBoundingClientRect();
             return b.textContent?.includes('예약하기') && rect.x < panelX;
           });
-          if (btn) { btn.click(); return true; }
-          return false;
+          if (btn) { btn.click(); return 'primary'; }
+          // 2차: 아무 "예약하기" 텍스트 버튼
+          const allBtns = Array.from(doc.querySelectorAll('button')) as any[];
+          const fallback = allBtns.find((b: any) => b.textContent?.trim() === '예약하기');
+          if (fallback) { fallback.click(); return 'fallback'; }
+          return null;
         }, FORM_PANEL_X_MIN);
         if (!openFormClicked) throw new Error('예약하기 버튼을 찾을 수 없습니다.');
+        logger.info('예약하기 폼 열기', { method: openFormClicked });
         await page.waitForTimeout(2000);
         await siteAuth.captureScreenshot(page, 'debug-after-form-open');
 
