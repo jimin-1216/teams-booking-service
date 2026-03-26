@@ -125,62 +125,62 @@ export class RoomScraper {
    * 회의실 위치 클릭 → 건물 선택 → 층 선택
    */
   private async applyFilter(page: Page, building: string, floor: number): Promise<void> {
-    // 확인 다이얼로그가 떠 있으면 닫기 (이전 예약 폼 잔여)
-    await this.dismissConfirmDialog(page);
-    await siteAuth.captureScreenshot(page, 'debug-before-filter');
-
     // 회의실 위치 필터 클릭
-    const locationFilter = await page.$("input[placeholder='회의실 위치']");
-    if (!locationFilter) {
-      await siteAuth.captureScreenshot(page, 'debug-no-filter-input');
-      throw new Error('회의실 위치 필터를 찾을 수 없습니다.');
-    }
+    const filterClicked = await page.evaluate(() => {
+      const doc = (globalThis as any).document;
+      const input = doc.querySelector("input[placeholder='회의실 위치']") as any;
+      if (input) { input.click(); return true; }
+      return false;
+    });
+    if (!filterClicked) throw new Error('회의실 위치 필터를 찾을 수 없습니다.');
+    await page.waitForTimeout(1000);
 
-    await locationFilter.click();
+    // 건물 선택 (evaluate로 직접 DOM 클릭 — headless 호환)
+    const buildingClicked = await page.evaluate((b: string) => {
+      const doc = (globalThis as any).document;
+      const items = doc.querySelectorAll('div.css-y4bpjy') as any;
+      for (const item of items) {
+        if (item.textContent?.includes(b)) {
+          item.click();
+          return true;
+        }
+      }
+      return false;
+    }, building);
+    if (!buildingClicked) {
+      logger.error('건물 선택 실패', { building });
+      throw new Error(`건물 "${building}"을 찾을 수 없습니다.`);
+    }
     await page.waitForTimeout(800);
-    await siteAuth.captureScreenshot(page, 'debug-filter-dropdown');
+    logger.info('건물 선택 완료', { building });
 
-    // 건물 선택 (드롭다운 왼쪽: css-y4bpjy 클래스)
-    try {
-      await page.locator(`div.css-y4bpjy:has-text("${building}")`).click({ timeout: 5000 });
-    } catch (error) {
-      const pageContent = await page.content();
-      const dialogText = await page.evaluate(() => {
-        const doc = (globalThis as any).document;
-        const els = Array.from(doc.querySelectorAll('[role="dialog"], .modal, [class*="modal"], [class*="overlay"], [class*="popup"]')) as any[];
-        return els.map((el: any) => ({ tag: el.tagName, class: el.className, text: el.innerText?.slice(0, 200) }));
-      });
-      logger.error('DEBUG: 건물 클릭 실패', {
-        dialogElements: dialogText,
-        hasOverlay: pageContent.includes('예약하기'),
-        url: page.url(),
-      });
-      // 다이얼로그 다시 시도
-      await this.dismissConfirmDialog(page);
-      // force: true로 재시도
-      await page.locator(`div.css-y4bpjy:has-text("${building}")`).click({ force: true, timeout: 5000 });
+    // 층 선택 (evaluate로 직접 DOM 클릭)
+    const floorClicked = await page.evaluate((f: number) => {
+      const doc = (globalThis as any).document;
+      const allEls = Array.from(doc.querySelectorAll('div, span, p, li')) as any[];
+      for (const el of allEls) {
+        const text = el.textContent?.trim();
+        if (text === `${f}층` && el.offsetParent !== null) {
+          el.click();
+          return true;
+        }
+      }
+      // 폴백: 부분 매칭
+      for (const el of allEls) {
+        const text = el.textContent?.trim();
+        if (text?.includes(`${f}층`) && text.length < 10 && el.offsetParent !== null) {
+          el.click();
+          return true;
+        }
+      }
+      return false;
+    }, floor);
+    if (!floorClicked) {
+      logger.error('층 선택 실패', { floor });
+      throw new Error(`${floor}층을 찾을 수 없습니다.`);
     }
-    await page.waitForTimeout(500);
-    logger.info('DEBUG: 건물 선택 완료', { building });
-
-    // 층 선택 (드롭다운 오른쪽)
-    const floorLocator = page.locator(`text=${floor}층`).first();
-    const floorVisible = await floorLocator.isVisible({ timeout: 3000 }).catch(() => false);
-    logger.info('DEBUG: 층 선택 시도', { floor, visible: floorVisible });
-    if (!floorVisible) {
-      // 드롭다운이 안 열렸을 수 있으니 다시 시도
-      const allTexts = await page.evaluate(() => {
-        const doc = (globalThis as any).document;
-        return (Array.from(doc.querySelectorAll('div, span, p')) as any[])
-          .filter((el: any) => el.innerText?.includes('층'))
-          .slice(0, 10)
-          .map((el: any) => ({ tag: el.tagName, class: el.className, text: el.innerText?.slice(0, 50) }));
-      });
-      logger.error('DEBUG: 층 요소 못 찾음', { floor, floorElements: allTexts });
-    }
-    await floorLocator.click({ force: true, timeout: 10000 });
     await page.waitForTimeout(1500);
-    logger.info('DEBUG: 층 선택 완료', { floor });
+    logger.info('층 선택 완료', { floor });
   }
 
   /**
