@@ -121,16 +121,29 @@ export class RoomScraper {
   private async applyFilter(page: Page, building: string, floor: number): Promise<void> {
     // 확인 다이얼로그가 떠 있으면 닫기 (이전 예약 폼 잔여)
     await this.dismissConfirmDialog(page);
+    await siteAuth.captureScreenshot(page, 'debug-before-filter');
 
     // 회의실 위치 필터 클릭
     const locationFilter = await page.$("input[placeholder='회의실 위치']");
-    if (!locationFilter) throw new Error('회의실 위치 필터를 찾을 수 없습니다.');
+    if (!locationFilter) {
+      await siteAuth.captureScreenshot(page, 'debug-no-filter-input');
+      throw new Error('회의실 위치 필터를 찾을 수 없습니다.');
+    }
 
     await locationFilter.click();
     await page.waitForTimeout(800);
+    await siteAuth.captureScreenshot(page, 'debug-filter-dropdown');
 
     // 건물 선택 (드롭다운 왼쪽: css-y4bpjy 클래스)
-    await page.locator(`div.css-y4bpjy:has-text("${building}")`).click();
+    try {
+      await page.locator(`div.css-y4bpjy:has-text("${building}")`).click({ timeout: 5000 });
+    } catch (error) {
+      await siteAuth.captureScreenshot(page, 'debug-building-click-failed');
+      // 다이얼로그 다시 시도
+      await this.dismissConfirmDialog(page);
+      // force: true로 재시도
+      await page.locator(`div.css-y4bpjy:has-text("${building}")`).click({ force: true, timeout: 5000 });
+    }
     await page.waitForTimeout(500);
 
     // 층 선택 (드롭다운 오른쪽)
@@ -340,12 +353,26 @@ export class RoomScraper {
    */
   private async dismissConfirmDialog(page: Page): Promise<void> {
     try {
-      const confirmBtn = page.locator('button:has-text("확인")');
-      if (await confirmBtn.isVisible({ timeout: 1000 })) {
-        await confirmBtn.click();
-        await page.waitForTimeout(500);
-        logger.info('확인 다이얼로그 닫음');
+      // 여러 패턴으로 다이얼로그 버튼 탐색
+      const selectors = [
+        'button:has-text("확인")',
+        'button:has-text("닫기")',
+        'button:has-text("취소")',
+        '[role="dialog"] button',
+        '.modal button',
+      ];
+      for (const sel of selectors) {
+        const btn = page.locator(sel).first();
+        if (await btn.isVisible({ timeout: 500 })) {
+          await btn.click({ force: true });
+          await page.waitForTimeout(500);
+          logger.info('다이얼로그 닫음', { selector: sel });
+          return;
+        }
       }
+      // Escape 키로도 시도
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(300);
     } catch {
       // 다이얼로그 없으면 무시
     }
