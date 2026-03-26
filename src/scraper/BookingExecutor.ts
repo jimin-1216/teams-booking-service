@@ -126,7 +126,7 @@ export class BookingExecutor {
         }
 
         // 6. 예약 완료 대기 + 결과 검증
-        await page.waitForLoadState('networkidle', { timeout: 10_000 });
+        await page.waitForLoadState('domcontentloaded', { timeout: 10_000 });
         await page.waitForTimeout(2000);
         await siteAuth.captureScreenshot(page, 'debug-after-submit');
 
@@ -264,7 +264,7 @@ export class BookingExecutor {
           return false;
         }, SIDEBAR_X_MAX);
         if (navClicked) {
-          await page.waitForLoadState('networkidle', { timeout: 10_000 });
+          await page.waitForLoadState('domcontentloaded', { timeout: 10_000 });
           await page.waitForTimeout(2000);
         }
 
@@ -308,7 +308,7 @@ export class BookingExecutor {
           });
           if (confirmBtn) confirmBtn.click();
         });
-        await page.waitForLoadState('networkidle', { timeout: 10_000 });
+        await page.waitForLoadState('domcontentloaded', { timeout: 10_000 });
 
         logger.info('예약 취소 성공', {
           duration_ms: Date.now() - start,

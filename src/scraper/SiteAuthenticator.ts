@@ -23,7 +23,7 @@ export class SiteAuthenticator {
     try {
       logger.info('센터 예약 사이트 로그인 시작');
 
-      await page.goto(config.mile.loginUrl, { waitUntil: 'networkidle' });
+      await page.goto(config.mile.loginUrl, { waitUntil: 'domcontentloaded' });
       await page.waitForTimeout(2000);
 
       // 아이디 입력
@@ -56,7 +56,7 @@ export class SiteAuthenticator {
       await page.waitForURL(`**${selectors.login.loginSuccessUrl}*`, {
         timeout: 10_000,
       });
-      await page.waitForLoadState('networkidle', { timeout: 10_000 });
+      await page.waitForLoadState('domcontentloaded', { timeout: 10_000 });
       logger.info('로그인 성공');
 
       // 워크스페이스 선택
@@ -103,7 +103,7 @@ export class SiteAuthenticator {
       throw new Error(`워크스페이스 "${workspaceName}"를 찾을 수 없습니다.`);
     }
 
-    await page.waitForLoadState('networkidle', { timeout: 15_000 });
+    await page.waitForLoadState('domcontentloaded', { timeout: 15_000 });
     await page.waitForTimeout(2000);
 
     logger.info('워크스페이스 진입', { url: page.url() });
@@ -135,14 +135,14 @@ export class SiteAuthenticator {
     });
 
     if (navClicked) {
-      await page.waitForLoadState('networkidle', { timeout: 10_000 });
+      await page.waitForLoadState('domcontentloaded', { timeout: 10_000 });
       await page.waitForTimeout(2000);
     }
 
     // 예약 현황 페이지 도달 확인, 실패 시 직접 이동
     if (!page.url().includes('/meeting/')) {
       logger.warn('예약 현황 페이지 미도달, 직접 이동 시도');
-      await page.goto(`${config.mile.baseUrl}/meeting/schedule`, { waitUntil: 'networkidle' });
+      await page.goto(`${config.mile.baseUrl}/meeting/schedule`, { waitUntil: 'domcontentloaded' });
       await page.waitForTimeout(2000);
     }
 
