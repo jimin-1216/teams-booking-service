@@ -1,0 +1,58 @@
+{
+  "$schema": "https://developer.microsoft.com/en-us/json-schemas/teams/v1.17/MicrosoftTeams.schema.json",
+  "manifestVersion": "1.17",
+  "version": "1.0.0",
+  "id": "bd0b1399-0f7f-418d-8d08-cb5f13243413",
+  "developer": {
+    "name": "CGInside",
+    "websiteUrl": "https://cginside.com",
+    "privacyUrl": "https://cginside.com/privacy",
+    "termsOfUseUrl": "https://cginside.com/terms"
+  },
+  "name": {
+    "short": "회의실 예약",
+    "full": "서울창업허브 회의실 예약 봇"
+  },
+  "description": {
+    "short": "회의실 예약 챗봇",
+    "full": "서울창업허브 공덕 회의실을 Teams 채팅으로 예약할 수 있는 봇입니다."
+  },
+  "icons": {
+    "color": "color.png",
+    "outline": "outline.png"
+  },
+  "accentColor": "#4F6BED",
+  "bots": [
+    {
+      "botId": "bd0b1399-0f7f-418d-8d08-cb5f13243413",
+      "scopes": ["personal", "team", "groupChat"],
+      "supportsFiles": false,
+      "isNotificationOnly": false,
+      "commandLists": [
+        {
+          "scopes": ["personal"],
+          "commands": [
+            {
+              "title": "예약",
+              "description": "회의실 예약하기"
+            },
+            {
+              "title": "현황",
+              "description": "오늘 예약 현황 보기"
+            },
+            {
+              "title": "취소",
+              "description": "예약 취소하기"
+            },
+            {
+              "title": "도움말",
+              "description": "사용법 안내"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "permissions": ["identity", "messageTeamMembers"],
+  "validDomains": []
+}
