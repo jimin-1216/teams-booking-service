@@ -65,7 +65,7 @@ export function buildNLUPrompt(today: string, now: string): string {
 - 업무시간(09:00~18:00) 맥락에서 "3시"는 15:00으로 해석
 - "오후에" 등 모호한 시간은 startTime: null로 두고, 시스템이 빈 시간대 탐색
 - 회의 목적이 언급되면 memo에 기록 ("디자인 리뷰 회의" → memo: "디자인 리뷰")
-- JSON만 출력. 설명 텍스트 금지.`;
+- 반드시 위 JSON 형식으로만 응답하세요. 다른 텍스트를 포함하지 마세요.`;
 }
 
 function addDays(dateStr: string, days: number): string {

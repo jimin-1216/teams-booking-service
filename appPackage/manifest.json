@@ -10,12 +10,12 @@
     "termsOfUseUrl": "https://cginside.com/terms"
   },
   "name": {
-    "short": "회의실 예약",
-    "full": "서울창업허브 회의실 예약 봇"
+    "short": "호비",
+    "full": "호비 — 서울창업허브 회의실 예약 봇"
   },
   "description": {
-    "short": "회의실 예약 챗봇",
-    "full": "서울창업허브 공덕 회의실을 Teams 채팅으로 예약할 수 있는 봇입니다."
+    "short": "회의실 예약 AI 봇",
+    "full": "서울창업허브 공덕 회의실을 자연어로 예약할 수 있는 AI 봇입니다. '내일 3시에 회의실 잡아줘'처럼 말하면 됩니다."
   },
   "icons": {
     "color": "color.png",

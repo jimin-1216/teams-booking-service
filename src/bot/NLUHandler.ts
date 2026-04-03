@@ -11,6 +11,7 @@ import { bookingRepository } from '../data/BookingRepository';
 import { roomRepository } from '../data/RoomRepository';
 import { createLogger } from '../utils/logger';
 import { config } from '../config';
+import { scraperQueue } from '../utils/queue';
 
 const logger = createLogger('NLUHandler');
 
@@ -117,6 +118,11 @@ async function handleBookIntent(
       endTime: filled.endTime!,
       floor: filled.floor!,
     };
+
+    // 대기열 상태 로깅
+    if (scraperQueue.size > 0) {
+      logger.info('스크래퍼 대기열', { queueSize: scraperQueue.size, pending: scraperQueue.pending });
+    }
 
     const rooms = await roomScraper.searchAvailableRooms(params);
 

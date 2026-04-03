@@ -30,7 +30,7 @@ export const config = {
   scraper: {
     timeout: 30_000, // 30초
     maxBrowserInstances: 1,
-    maxQueueSize: 5,
+    maxQueueSize: 15,
     queueTimeout: 60_000, // 60초
     restartAfterTasks: 10,
     maxMemoryMB: 500,
@@ -41,10 +41,10 @@ export const config = {
     path: path.resolve(process.env.DB_PATH || './data/booking.db'),
   },
 
-  // AI (Claude API)
+  // AI (OpenAI GPT)
   ai: {
-    apiKey: process.env.ANTHROPIC_API_KEY || '',
-    model: process.env.AI_MODEL || 'claude-haiku-4-5-20251001',
+    apiKey: process.env.OPENAI_API_KEY || '',
+    model: process.env.AI_MODEL || 'gpt-4o-mini',
     maxTokens: 512,
     temperature: 0,
   },
@@ -87,7 +87,7 @@ export function validateConfig(): void {
 
   // 선택적 경고
   if (!config.ai.apiKey) {
-    console.warn('⚠️  ANTHROPIC_API_KEY 미설정 — AI 자연어 예약 비활성화 (카드 UI만 사용)');
+    console.warn('⚠️  OPENAI_API_KEY 미설정 — AI 자연어 예약 비활성화 (카드 UI만 사용)');
   }
   if (!config.webhook.secret) {
     console.warn('⚠️  TEAMS_WEBHOOK_SECRET 미설정 — Outgoing Webhook HMAC 검증 비활성화');

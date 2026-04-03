@@ -1,4 +1,4 @@
-import { callClaude } from './ClaudeClient';
+import { callClaude } from './LLMClient';
 import { buildNLUPrompt } from './prompts';
 import { config } from '../config';
 import { createLogger } from '../utils/logger';
