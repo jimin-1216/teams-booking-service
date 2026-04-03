@@ -41,6 +41,27 @@ export const config = {
     path: path.resolve(process.env.DB_PATH || './data/booking.db'),
   },
 
+  // AI (Claude API)
+  ai: {
+    apiKey: process.env.ANTHROPIC_API_KEY || '',
+    model: process.env.AI_MODEL || 'claude-haiku-4-5-20251001',
+    maxTokens: 512,
+    temperature: 0,
+  },
+
+  // Outgoing Webhook
+  webhook: {
+    secret: process.env.TEAMS_WEBHOOK_SECRET || '',
+  },
+
+  // 예약 정책
+  policy: {
+    dailyLimitMinutes: 180, // 3시간
+    allowedFloors: [2, 7],  // 입주층(7) + 공용(2)
+    defaultFloor: 7,
+    defaultDurationMinutes: 30,
+  },
+
   // Logging
   logs: {
     screenshotDir: path.resolve('./logs/screenshots'),
@@ -62,5 +83,13 @@ export function validateConfig(): void {
     throw new Error(
       `필수 환경변수가 설정되지 않았습니다: ${missing.map((m) => m.key).join(', ')}`,
     );
+  }
+
+  // 선택적 경고
+  if (!config.ai.apiKey) {
+    console.warn('⚠️  ANTHROPIC_API_KEY 미설정 — AI 자연어 예약 비활성화 (카드 UI만 사용)');
+  }
+  if (!config.webhook.secret) {
+    console.warn('⚠️  TEAMS_WEBHOOK_SECRET 미설정 — Outgoing Webhook HMAC 검증 비활성화');
   }
 }

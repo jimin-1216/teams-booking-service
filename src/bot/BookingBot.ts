@@ -11,6 +11,8 @@ import { roomScraper, SearchParams } from '../scraper/RoomScraper';
 import { bookingExecutor } from '../scraper/BookingExecutor';
 import { bookingRepository } from '../data/BookingRepository';
 import { roomRepository } from '../data/RoomRepository';
+import { processNaturalLanguage } from './NLUHandler';
+import { config } from '../config';
 
 const logger = createLogger('BookingBot');
 
@@ -46,25 +48,44 @@ export class BookingBot extends TeamsActivityHandler {
       return;
     }
 
-    const text = (context.activity.text || '').trim().toLowerCase();
+    const text = (context.activity.text || '').trim();
+    const lower = text.toLowerCase();
 
-    // 키워드 명령어 처리
-    if (text.includes('예약 조회') || text.includes('조회') || text.includes('예약')) {
+    // 기존 키워드 명령어 (카드 기반 fallback)
+    if (lower === '예약 조회' || lower === '조회') {
       await context.sendActivity({
         attachments: [CardBuilder.createSearchCard()],
       });
-    } else if (text.includes('내 예약') || text.includes('목록')) {
-      await this.handleMyBookings(context);
-    } else if (text.includes('도움말') || text.includes('도움') || text.includes('help')) {
-      await context.sendActivity({
-        attachments: [CardBuilder.createHelpCard()],
-      });
-    } else {
-      // 인식 불가 → 도움말 표시
-      await context.sendActivity({
-        attachments: [CardBuilder.createHelpCard()],
-      });
+      return;
     }
+    if (lower === '내 예약' || lower === '목록') {
+      await this.handleMyBookings(context);
+      return;
+    }
+    if (lower === '도움말' || lower === '도움' || lower === 'help') {
+      await context.sendActivity({
+        attachments: [CardBuilder.createHelpCard()],
+      });
+      return;
+    }
+
+    // AI 자연어 처리 (Claude API 키가 있는 경우)
+    if (config.ai.apiKey) {
+      try {
+        const userId = context.activity.from.id;
+        const userName = context.activity.from.name || 'Unknown';
+        const response = await processNaturalLanguage(text, userId, userName);
+        await context.sendActivity(response);
+        return;
+      } catch (error) {
+        logger.error('NLU 처리 실패, 카드 UI로 fallback', { error: (error as Error).message });
+      }
+    }
+
+    // Fallback: 도움말
+    await context.sendActivity({
+      attachments: [CardBuilder.createHelpCard()],
+    });
   }
 
   private async handleCardAction(context: TurnContext): Promise<void> {

@@ -135,6 +135,27 @@ export class BookingRepository {
   }
 
   /**
+   * 특정 사용자의 특정 날짜 예약 목록 (일일 3시간 제한 검증용)
+   */
+  findByUserIdAndDate(userId: string, date: string): BookingWithRoom[] {
+    const db = getDatabase();
+    return db
+      .prepare(`
+        SELECT b.id, b.room_id as roomId, b.user_id as userId, b.user_name as userName,
+               b.date, b.start_time as startTime, b.end_time as endTime, b.memo,
+               b.status, b.external_booking_id as externalBookingId,
+               b.error_message as errorMessage,
+               b.created_at as createdAt, b.updated_at as updatedAt,
+               r.name as roomName, r.floor as roomFloor, r.building as roomBuilding, r.capacity as roomCapacity
+        FROM bookings b
+        JOIN rooms r ON b.room_id = r.id
+        WHERE b.user_id = ? AND b.date = ? AND b.status IN ('confirmed', 'pending')
+        ORDER BY b.start_time
+      `)
+      .all(userId, date) as BookingWithRoom[];
+  }
+
+  /**
    * 특정 날짜/회의실의 예약 목록 (reconciliation 용)
    */
   findByDateAndRoom(date: string, roomId: string): Booking[] {

@@ -11,6 +11,8 @@ import { initializeDatabase, closeDatabase } from './data/database';
 import { BookingBot } from './bot/BookingBot';
 import { browserPool } from './scraper/BrowserPool';
 import { createLogger } from './utils/logger';
+import { createWebhookHandler } from './bot/WebhookHandler';
+import { processNaturalLanguage } from './bot/NLUHandler';
 
 const logger = createLogger('main');
 
@@ -52,6 +54,21 @@ async function main() {
   app.post('/api/messages', async (req, res) => {
     await adapter.process(req, res, (context) => bot.run(context));
   });
+
+  // Outgoing Webhook 엔드포인트 (관리자 앱 승인 없이 Teams 연결)
+  const webhookHandler = createWebhookHandler(async (text, userId, userName, _convId, _isGroup) => {
+    if (config.ai.apiKey) {
+      return processNaturalLanguage(text, userId, userName);
+    }
+
+    // Claude API 키 없으면 기본 응답
+    const lower = text.toLowerCase();
+    if (lower.includes('도움말') || lower.includes('help')) {
+      return '회의실 예약 봇입니다.\n\n사용법:\n• "내일 3시에 회의실 잡아줘"\n• "오늘 남은 시간"\n• "내 예약"\n• "예약 취소"';
+    }
+    return 'AI 기능이 아직 설정되지 않았습니다. ANTHROPIC_API_KEY를 .env에 추가해주세요.';
+  });
+  app.post('/api/webhook', webhookHandler);
 
   // Health check
   app.get('/health', (_req, res) => {
