@@ -12,6 +12,8 @@ import { bookingExecutor } from '../scraper/BookingExecutor';
 import { bookingRepository } from '../data/BookingRepository';
 import { roomRepository } from '../data/RoomRepository';
 import { processNaturalLanguage } from './NLUHandler';
+import { detectBookingIntent } from './KeywordDetector';
+import { saveGroupContext, consumeGroupContext } from './ConversationManager';
 import { config } from '../config';
 
 const logger = createLogger('BookingBot');
@@ -48,8 +50,15 @@ export class BookingBot extends TeamsActivityHandler {
       return;
     }
 
-    const text = (context.activity.text || '').trim();
+    const text = this.stripBotMention(context);
     const lower = text.toLowerCase();
+    const isGroupChat = context.activity.conversation.conversationType !== 'personal';
+
+    // 그룹 채팅: @멘션 없는 메시지는 키워드 감지만 수행
+    if (isGroupChat && !this.isBotMentioned(context)) {
+      await this.handleGroupKeywordDetection(context, text);
+      return;
+    }
 
     // 기존 키워드 명령어 (카드 기반 fallback)
     if (lower === '예약 조회' || lower === '조회') {
@@ -69,12 +78,26 @@ export class BookingBot extends TeamsActivityHandler {
       return;
     }
 
-    // AI 자연어 처리 (Claude API 키가 있는 경우)
+    // AI 자연어 처리
     if (config.ai.apiKey) {
       try {
         const userId = context.activity.from.id;
         const userName = context.activity.from.name || 'Unknown';
-        const response = await processNaturalLanguage(text, userId, userName);
+
+        // 그룹 채팅에서 @멘션으로 호출된 경우, 기억해둔 컨텍스트 활용
+        let nluInput = text;
+        if (isGroupChat) {
+          const convId = context.activity.conversation.id;
+          const remembered = consumeGroupContext(convId);
+          if (remembered.length > 0 && this.isVagueCommand(text)) {
+            // "잡아줘", "해줘" 같은 짧은 명령 → 기억된 컨텍스트와 합침
+            const recentTexts = remembered.map(r => r.text);
+            nluInput = recentTexts.join(' ') + ' ' + text;
+            logger.info('그룹 컨텍스트 활용', { original: text, merged: nluInput });
+          }
+        }
+
+        const response = await processNaturalLanguage(nluInput, userId, userName);
         await context.sendActivity(response);
         return;
       } catch (error) {
@@ -86,6 +109,85 @@ export class BookingBot extends TeamsActivityHandler {
     await context.sendActivity({
       attachments: [CardBuilder.createHelpCard()],
     });
+  }
+
+  /**
+   * 그룹 채팅에서 @멘션 없이 예약 키워드 감지
+   * - high: 즉시 반응 (예약 제안)
+   * - medium: 조용히 기억 → 나중에 @멘션 시 컨텍스트로 활용
+   */
+  private async handleGroupKeywordDetection(context: TurnContext, text: string): Promise<void> {
+    const detection = detectBookingIntent(text);
+
+    if (!detection.detected) return;
+
+    const convId = context.activity.conversation.id;
+    const userId = context.activity.from.id;
+    const userName = context.activity.from.name || '';
+
+    logger.info('그룹 채팅 키워드 감지', {
+      text: text.substring(0, 50),
+      confidence: detection.confidence,
+    });
+
+    // medium → 조용히 기억만
+    if (detection.confidence === 'medium') {
+      saveGroupContext({ conversationId: convId, text, userName, userId });
+      return;
+    }
+
+    // high → 즉시 반응
+    if (config.ai.apiKey) {
+      try {
+        const response = await processNaturalLanguage(text, userId, userName);
+        await context.sendActivity(`${userName}님, 회의실 예약 도와드릴까요?\n\n${response}`);
+        return;
+      } catch (error) {
+        logger.error('그룹 키워드 감지 NLU 실패', { error: (error as Error).message });
+      }
+    }
+
+    await context.sendActivity(
+      `${userName}님, 회의실 예약이 필요하신 것 같아요! 저를 @멘션하고 "내일 3시에 회의실 잡아줘"처럼 말씀해주세요.`,
+    );
+  }
+
+  /**
+   * 짧거나 모호한 명령인지 판단 ("잡아줘", "해줘", "응" 등)
+   * → 기억된 그룹 컨텍스트와 합쳐야 의미가 완성되는 경우
+   */
+  private isVagueCommand(text: string): boolean {
+    const lower = text.trim().toLowerCase();
+    // 시간/날짜 정보가 없는 짧은 명령
+    const vaguePatterns = [
+      /^(잡아줘|해줘|부탁|예약해|예약 해|잡아|해 줘|ㄱㄱ|고고|ㅇㅋ)$/,
+      /^회의실\s*(잡아|예약|부탁)/,
+    ];
+    if (vaguePatterns.some(p => p.test(lower))) return true;
+    // 10자 이하이고 시간 표현이 없으면 모호한 명령
+    return lower.length <= 10 && !/\d{1,2}\s*시|오전|오후/.test(lower);
+  }
+
+  /**
+   * 봇이 @멘션되었는지 확인
+   */
+  private isBotMentioned(context: TurnContext): boolean {
+    const botId = context.activity.recipient.id;
+    const mentions = context.activity.entities?.filter(e => e.type === 'mention') || [];
+    return mentions.some((m: any) => m.mentioned?.id === botId);
+  }
+
+  /**
+   * 메시지에서 @봇 멘션 텍스트 제거
+   */
+  private stripBotMention(context: TurnContext): string {
+    let text = (context.activity.text || '').trim();
+    const botName = context.activity.recipient.name;
+    if (botName) {
+      // <at>봇이름</at> 형태 제거
+      text = text.replace(new RegExp(`<at>${botName}</at>`, 'gi'), '').trim();
+    }
+    return text;
   }
 
   private async handleCardAction(context: TurnContext): Promise<void> {

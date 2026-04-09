@@ -12,6 +12,7 @@ import { BookingBot } from './bot/BookingBot';
 import { browserPool } from './scraper/BrowserPool';
 import { createLogger } from './utils/logger';
 import { createWebhookHandler } from './bot/WebhookHandler';
+import { createWorkflowHandler } from './bot/WorkflowHandler';
 import { processNaturalLanguage } from './bot/NLUHandler';
 
 const logger = createLogger('main');
@@ -69,6 +70,15 @@ async function main() {
     return 'AI 기능이 아직 설정되지 않았습니다. ANTHROPIC_API_KEY를 .env에 추가해주세요.';
   });
   app.post('/api/webhook', webhookHandler);
+
+  // Power Automate 워크플로우 엔드포인트
+  const workflowHandler = createWorkflowHandler(async (text, userId, userName) => {
+    if (config.ai.apiKey) {
+      return processNaturalLanguage(text, userId, userName);
+    }
+    return 'AI 기능이 설정되지 않았습니다. OPENAI_API_KEY를 .env에 추가해주세요.';
+  });
+  app.post('/api/workflow', workflowHandler);
 
   // Health check
   app.get('/health', (_req, res) => {

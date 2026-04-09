@@ -22,11 +22,23 @@ export interface ConversationState {
   lastActivity: number;
 }
 
+/** 그룹 채팅에서 엿들은 컨텍스트 (medium 확신도 키워드 감지) */
+export interface GroupContext {
+  conversationId: string;
+  text: string;
+  userName: string;
+  userId: string;
+  timestamp: number;
+}
+
 /** TTL: 5분 */
 const TTL_MS = 5 * 60 * 1000;
 
-/** 대화 상태 저장소 (in-memory) */
+/** 1:1 대화 상태 저장소 */
 const states = new Map<string, ConversationState>();
+
+/** 그룹 채팅 컨텍스트 저장소 (conversationId → 최근 메시지들) */
+const groupContexts = new Map<string, GroupContext[]>();
 
 /**
  * 대화 상태 조회 (TTL 초과 시 자동 삭제)
@@ -84,4 +96,50 @@ export function mergeEntities(
   }
 
   return merged;
+}
+
+/**
+ * 그룹 채팅 컨텍스트 저장 (키워드 감지 medium → 기억만)
+ */
+export function saveGroupContext(ctx: Omit<GroupContext, 'timestamp'>): void {
+  const convId = ctx.conversationId;
+  const entries = groupContexts.get(convId) || [];
+
+  entries.push({ ...ctx, timestamp: Date.now() });
+
+  // 최근 5개만 유지
+  if (entries.length > 5) entries.shift();
+
+  groupContexts.set(convId, entries);
+  logger.info('그룹 컨텍스트 저장', { conversationId: convId, text: ctx.text.substring(0, 30) });
+}
+
+/**
+ * 그룹 채팅 컨텍스트 조회 (TTL 이내 메시지만)
+ */
+export function getGroupContext(conversationId: string): GroupContext[] {
+  const entries = groupContexts.get(conversationId);
+  if (!entries) return [];
+
+  const now = Date.now();
+  const valid = entries.filter(e => now - e.timestamp <= TTL_MS);
+
+  if (valid.length !== entries.length) {
+    if (valid.length === 0) {
+      groupContexts.delete(conversationId);
+    } else {
+      groupContexts.set(conversationId, valid);
+    }
+  }
+
+  return valid;
+}
+
+/**
+ * 그룹 컨텍스트 소비 (사용 후 삭제)
+ */
+export function consumeGroupContext(conversationId: string): GroupContext[] {
+  const ctx = getGroupContext(conversationId);
+  groupContexts.delete(conversationId);
+  return ctx;
 }
