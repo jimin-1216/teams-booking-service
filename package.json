@@ -14,9 +14,9 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@microsoft/teams.apps": "^2.0.8",
+    "@microsoft/teams.common": "^2.0.8",
     "better-sqlite3": "^11.7.0",
-    "botbuilder": "^4.23.1",
-    "botframework-connector": "^4.23.1",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "node-cron": "^3.0.3",

@@ -1,4 +1,5 @@
 import { ParsedEntities } from '../ai/NLUParser';
+import { SplitResult } from '../rules/BookingSplitter';
 import { createLogger } from '../utils/logger';
 
 const logger = createLogger('ConversationManager');
@@ -19,6 +20,8 @@ export interface ConversationState {
     startTime: string;
     endTime: string;
   };
+  /** 얍삽이 모드 분할 정보 */
+  sneakySplit?: SplitResult;
   lastActivity: number;
 }
 

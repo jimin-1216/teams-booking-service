@@ -13,12 +13,11 @@ export const config = {
     workspaceName: process.env.MILE_WORKSPACE || '서울창업허브',
   },
 
-  // Azure Bot Service (SingleTenant)
+  // Teams SDK (기존 MICROSOFT_APP_* 환경변수도 호환)
   bot: {
-    appId: process.env.MICROSOFT_APP_ID || '',
-    appPassword: process.env.MICROSOFT_APP_PASSWORD || '',
-    appTenantId: process.env.MICROSOFT_APP_TENANT_ID || '',
-    appType: 'SingleTenant' as const,
+    appId: process.env.CLIENT_ID || process.env.MICROSOFT_APP_ID || '',
+    appPassword: process.env.CLIENT_SECRET || process.env.MICROSOFT_APP_PASSWORD || '',
+    appTenantId: process.env.TENANT_ID || process.env.MICROSOFT_APP_TENANT_ID || '',
     port: parseInt(process.env.PORT || '3978', 10),
   },
 
@@ -60,6 +59,15 @@ export const config = {
     allowedFloors: [2, 7],  // 입주층(7) + 공용(2)
     defaultFloor: 7,
     defaultDurationMinutes: 30,
+  },
+
+  // 얍삽이 모드: 3시간 초과 시 팀원 이름으로 예약 쪼개기
+  sneakyMode: {
+    enabled: process.env.SNEAKY_MODE === 'true',
+    // 쪼개기용 팀원 이름 (쉼표 구분 환경변수 또는 기본값)
+    teamMembers: (process.env.SNEAKY_MEMBERS || '').split(',').map(s => s.trim()).filter(Boolean),
+    // 쪼개기 단위 (분) — 각 조각의 최대 길이
+    splitUnitMinutes: parseInt(process.env.SNEAKY_SPLIT_UNIT || '30', 10),
   },
 
   // Logging

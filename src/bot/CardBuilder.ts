@@ -1,8 +1,20 @@
-import { CardFactory, Attachment } from 'botbuilder';
 import fs from 'fs';
 import path from 'path';
 import { RoomInfo } from '../scraper/RoomScraper';
 import { BookingWithRoom } from '../data/BookingRepository';
+
+/** botbuilder 의존 제거 — Adaptive Card Attachment 직접 생성 */
+export interface CardAttachment {
+  contentType: string;
+  content: Record<string, unknown>;
+}
+
+function adaptiveCard(card: Record<string, unknown>): CardAttachment {
+  return {
+    contentType: 'application/vnd.microsoft.card.adaptive',
+    content: card,
+  };
+}
 
 const searchCardTemplate = JSON.parse(
   fs.readFileSync(path.resolve(__dirname, 'cards/search.json'), 'utf-8'),
@@ -12,8 +24,8 @@ export class CardBuilder {
   /**
    * 회의실 조회 폼 Card
    */
-  static createSearchCard(): Attachment {
-    return CardFactory.adaptiveCard(searchCardTemplate);
+  static createSearchCard(): CardAttachment {
+    return adaptiveCard(searchCardTemplate);
   }
 
   /**
@@ -24,7 +36,7 @@ export class CardBuilder {
     date: string,
     startTime: string,
     endTime: string,
-  ): Attachment {
+  ): CardAttachment {
     const roomsByFloor = new Map<number, RoomInfo[]>();
     for (const room of rooms) {
       const list = roomsByFloor.get(room.floor) || [];
@@ -55,7 +67,7 @@ export class CardBuilder {
         color: 'Attention',
       });
 
-      return CardFactory.adaptiveCard({
+      return adaptiveCard({
         type: 'AdaptiveCard',
         version: '1.5',
         body,
@@ -138,7 +150,7 @@ export class CardBuilder {
       }
     }
 
-    return CardFactory.adaptiveCard({
+    return adaptiveCard({
       type: 'AdaptiveCard',
       version: '1.5',
       body,
@@ -157,7 +169,7 @@ export class CardBuilder {
     endTime: string,
     userName: string,
     memo?: string,
-  ): Attachment {
+  ): CardAttachment {
     const facts = [
       { title: '장소', value: `${floor}층 ${roomName}` },
       { title: '날짜', value: date },
@@ -169,7 +181,7 @@ export class CardBuilder {
     }
     facts.push({ title: '예약번호', value: bookingId });
 
-    return CardFactory.adaptiveCard({
+    return adaptiveCard({
       type: 'AdaptiveCard',
       version: '1.5',
       body: [
@@ -202,9 +214,9 @@ export class CardBuilder {
   /**
    * 내 예약 목록 Card
    */
-  static createMyBookingsCard(bookings: BookingWithRoom[]): Attachment {
+  static createMyBookingsCard(bookings: BookingWithRoom[]): CardAttachment {
     if (bookings.length === 0) {
-      return CardFactory.adaptiveCard({
+      return adaptiveCard({
         type: 'AdaptiveCard',
         version: '1.5',
         body: [
@@ -299,7 +311,7 @@ export class CardBuilder {
       );
     }
 
-    return CardFactory.adaptiveCard({
+    return adaptiveCard({
       type: 'AdaptiveCard',
       version: '1.5',
       body,
@@ -309,8 +321,8 @@ export class CardBuilder {
   /**
    * 에러/폴백 메시지 Card
    */
-  static createErrorCard(title: string, message: string): Attachment {
-    return CardFactory.adaptiveCard({
+  static createErrorCard(title: string, message: string): CardAttachment {
+    return adaptiveCard({
       type: 'AdaptiveCard',
       version: '1.5',
       body: [
@@ -340,8 +352,8 @@ export class CardBuilder {
   /**
    * 도움말 Card
    */
-  static createHelpCard(): Attachment {
-    return CardFactory.adaptiveCard({
+  static createHelpCard(): CardAttachment {
+    return adaptiveCard({
       type: 'AdaptiveCard',
       version: '1.5',
       body: [

@@ -9,6 +9,7 @@ import { roomScraper, SearchParams } from '../scraper/RoomScraper';
 import { bookingExecutor } from '../scraper/BookingExecutor';
 import { bookingRepository } from '../data/BookingRepository';
 import { roomRepository } from '../data/RoomRepository';
+import { isSneakyModeAvailable, splitBooking, buildSplitPreview, SplitResult } from '../rules/BookingSplitter';
 import { createLogger } from '../utils/logger';
 import { config } from '../config';
 import { scraperQueue } from '../utils/queue';
@@ -107,6 +108,10 @@ async function handleBookIntent(
   );
 
   if (!policyCheck.allowed) {
+    // 얍삽이 모드: 3시간 초과 시 예약 쪼개기 제안
+    if (isSneakyModeAvailable()) {
+      return handleSneakyMode(filled as ParsedEntities, userId, userName);
+    }
     return `${policyCheck.reason}${policyCheck.suggestion ? '\n\n' + policyCheck.suggestion : ''}`;
   }
 
@@ -158,13 +163,16 @@ async function handleBookIntent(
       },
     });
 
+    // 일일 사용 현황 — 기존 예약이 없어도 정책 안내 포함
+    const dailyUsage = policyCheck.dailyUsage || getDailyUsage(userId, filled.date!);
+
     let response = msg.buildRecommendation(
       recommended.name,
       recommended.floor,
       filled.date!,
       filled.startTime!,
       filled.endTime!,
-      policyCheck.dailyUsage,
+      dailyUsage,
     );
 
     if (rooms.length > 1) {
@@ -208,6 +216,11 @@ async function handleConfirmStep(
   if (!state.recommendation) {
     clearState(userId);
     return '추천된 회의실 정보가 없어요. 다시 시도해주세요.';
+  }
+
+  // 얍삽이 모드 분할 예약
+  if (state.sneakySplit) {
+    return executeSneakyBooking(userId, userName);
   }
 
   const rec = state.recommendation;
@@ -307,6 +320,141 @@ async function handleCancelIntent(
     response += `\n${i + 1}. ${b.date} ${b.startTime}~${b.endTime} ${b.roomFloor}층 ${b.roomName}`;
   });
   response += '\n\n어떤 예약을 취소할까요? (예: "내일 3시 예약 취소")';
+  return response;
+}
+
+/**
+ * 얍삽이 모드: 3시간 초과 예약을 쪼개서 팀원 이름으로 분할 제안
+ */
+async function handleSneakyMode(
+  entities: ParsedEntities,
+  userId: string,
+  userName: string,
+): Promise<string> {
+  const split = splitBooking(userId, userName, entities.date!, entities.startTime!, entities.endTime!);
+
+  if (split.slots.length <= 1) {
+    return '쪼갤 필요가 없어요. 일반 예약으로 진행할게요.';
+  }
+
+  // 공실 조회 (전체 시간대)
+  try {
+    const params: SearchParams = {
+      date: entities.date!,
+      startTime: entities.startTime!,
+      endTime: entities.endTime!,
+      floor: entities.floor!,
+    };
+
+    const rooms = await roomScraper.searchAvailableRooms(params);
+
+    if (rooms.length === 0) {
+      return msg.buildNoRoomsAvailable(entities.floor!, entities.date!, entities.startTime!, entities.endTime!);
+    }
+
+    const recommended = rooms[0];
+
+    // 상태 저장 — confirming + sneakySplit
+    setState(userId, {
+      step: 'confirming',
+      entities,
+      recommendation: {
+        roomId: recommended.id,
+        roomName: recommended.name,
+        roomFloor: recommended.floor,
+        roomBuilding: recommended.building,
+        date: entities.date!,
+        startTime: entities.startTime!,
+        endTime: entities.endTime!,
+      },
+      sneakySplit: split,
+    });
+
+    // DB에 캐싱
+    for (const room of rooms) {
+      roomRepository.upsert({
+        id: room.id, name: room.name, building: room.building,
+        floor: room.floor, capacity: room.capacity, externalId: room.externalId,
+      });
+    }
+
+    let response = `${recommended.floor}층 ${recommended.name}이 비어있어요.\n\n`;
+    response += buildSplitPreview(split);
+
+    return response;
+  } catch (error) {
+    logger.error('얍삽이 모드 공실 조회 실패', { error: (error as Error).message });
+    return msg.buildError('회의실 조회 중 문제가 발생했어요.');
+  }
+}
+
+/**
+ * 얍삽이 모드 확인 → 분할 예약 순차 실행
+ */
+async function executeSneakyBooking(
+  userId: string,
+  userName: string,
+): Promise<string> {
+  const state = getState(userId)!;
+  const rec = state.recommendation!;
+  const split = state.sneakySplit!;
+
+  setState(userId, { step: 'executing' });
+
+  const results: string[] = [];
+  let successCount = 0;
+
+  for (const slot of split.slots) {
+    try {
+      // 본인 슬롯만 내부 DB에 기록
+      if (slot.isOwner) {
+        bookingRepository.createPending({
+          roomId: rec.roomId,
+          userId,
+          userName: slot.userName,
+          date: rec.date,
+          startTime: slot.startTime,
+          endTime: slot.endTime,
+        });
+      }
+
+      // 외부 사이트에 예약 실행
+      const result = await bookingExecutor.executeBooking({
+        roomName: rec.roomName,
+        roomBuilding: rec.roomBuilding,
+        roomFloor: rec.roomFloor,
+        date: rec.date,
+        startTime: slot.startTime,
+        endTime: slot.endTime,
+        userName: slot.userName,
+        memo: slot.isOwner ? undefined : `${userName} 대리 예약`,
+      });
+
+      if (result.success) {
+        if (slot.isOwner) {
+          // pending → confirmed
+          const bookings = bookingRepository.findByUserIdAndDate(userId, rec.date);
+          const pending = bookings.find(b => b.startTime === slot.startTime && b.status === 'pending');
+          if (pending) bookingRepository.confirmBooking(pending.id, result.externalBookingId || '');
+        }
+        successCount++;
+        const marker = slot.isOwner ? '✅' : '✅🔄';
+        results.push(`${marker} ${slot.startTime}~${slot.endTime} ${slot.userName}`);
+      } else {
+        const marker = slot.isOwner ? '❌' : '❌🔄';
+        results.push(`${marker} ${slot.startTime}~${slot.endTime} ${slot.userName} — ${result.errorMessage}`);
+      }
+    } catch (error) {
+      results.push(`❌ ${slot.startTime}~${slot.endTime} ${slot.userName} — ${(error as Error).message}`);
+    }
+  }
+
+  clearState(userId);
+
+  let response = `얍삽이 예약 완료 (${successCount}/${split.slots.length}건 성공)\n`;
+  response += `📍 ${rec.roomFloor}층 ${rec.roomName}\n\n`;
+  response += results.join('\n');
+
   return response;
 }
 

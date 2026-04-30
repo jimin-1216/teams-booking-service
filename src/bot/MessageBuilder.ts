@@ -4,6 +4,28 @@ import { DailyUsage } from '../rules/BookingPolicy';
  * 자연어 응답 메시지 생성
  */
 
+export function buildDailyUsageWarning(
+  usage: DailyUsage,
+  requestedMinutes: number,
+): string {
+  if (usage.totalMinutes === 0) return '';
+
+  const usedStr = formatMinutesKo(usage.totalMinutes);
+  const remainStr = formatMinutesKo(usage.remainingMinutes);
+  const afterBooking = usage.remainingMinutes - requestedMinutes;
+  const afterStr = formatMinutesKo(Math.max(0, afterBooking));
+
+  let warning = `⚠️ 창업센터 일일 3시간 제한 현황\n`;
+  warning += `• 오늘 누적: ${usedStr} / 잔여: ${remainStr}\n`;
+  warning += `• 이 예약 후 잔여: ${afterStr}`;
+
+  if (afterBooking <= 30 && afterBooking > 0) {
+    warning += `\n⚡ 한도가 거의 다 찼습니다. 추가 예약이 어려울 수 있어요.`;
+  }
+
+  return warning;
+}
+
 export function buildRecommendation(
   roomName: string,
   floor: number,
@@ -13,16 +35,18 @@ export function buildRecommendation(
   dailyUsage?: DailyUsage,
 ): string {
   const dateLabel = formatDateLabel(date);
-  let msg = `${dateLabel} ${startTime}~${endTime}, ${floor}층 ${roomName} 예약할까요?`;
+  const requestedMinutes = diffMinutes(startTime, endTime);
+  let parts: string[] = [];
 
+  // 일일 사용 현황 경고 (기존 예약이 있을 때)
   if (dailyUsage) {
-    const remaining = dailyUsage.remainingMinutes - diffMinutes(startTime, endTime);
-    if (remaining >= 0 && remaining < 60) {
-      msg += `\n(예약 후 오늘 남은 시간: ${remaining}분)`;
-    }
+    const warning = buildDailyUsageWarning(dailyUsage, requestedMinutes);
+    if (warning) parts.push(warning);
   }
 
-  return msg;
+  parts.push(`${dateLabel} ${startTime}~${endTime}, ${floor}층 ${roomName} 예약할까요?`);
+
+  return parts.join('\n\n');
 }
 
 export function buildMissingFieldQuestion(missingFields: string[]): string {
